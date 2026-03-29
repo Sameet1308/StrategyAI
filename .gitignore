@@ -31,6 +31,9 @@ desktop.ini
 # Reference repos (cloned for local reference, not part of project)
 references/
 
+# Standalone scripts (contains credentials — never commit)
+standalone/
+
 # Logs
 *.log
 logs/
