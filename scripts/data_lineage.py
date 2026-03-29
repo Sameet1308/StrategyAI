@@ -434,15 +434,35 @@ def _df_to_base64(df):
     return base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
 
 
+def find_existing_dataset(session, cube_name):
+    """Search for an existing dataset by name. Returns (dataset_id, table_id) or (None, None)."""
+    try:
+        params = {"name": cube_name, "domain": 2, "type": 3}
+        resp = session.post("metadataSearches/results", params=params)
+        data = resp.json()
+        items = data.get("result", data.get("results", []))
+        if isinstance(items, list):
+            for item in items:
+                if item.get("name") == cube_name:
+                    dataset_id = item.get("id", "")
+                    if dataset_id:
+                        log.info(f"Found existing dataset '{cube_name}' (ID: {dataset_id})")
+                        try:
+                            defn = session.get(f"datasets/{dataset_id}/definition")
+                            tables = defn.get("result", {}).get("definition", {}).get("availableObjects", {}).get("tables", [])
+                            table_id = tables[0].get("id", "") if tables else ""
+                        except Exception:
+                            table_id = ""
+                        return dataset_id, table_id
+    except Exception as e:
+        log.debug(f"Search for existing dataset failed: {e}")
+    return None, None
+
+
 def publish_cube(session, cube_name, df, folder_id, description=""):
     """
-    Publish a pandas DataFrame as a new dataset (cube) on the DEV server.
-
-    Uses Strategy Push Data API:
-      POST /api/datasets — create dataset with definition + base64-encoded data
-
-    Data must be base64-encoded JSON array of objects.
-    Expressions use "TableName.ColumnName" format.
+    Publish or update a dataset (cube) on the DEV server.
+    If cube exists: PATCH to replace data. If not: POST to create new.
     """
     if df.empty:
         log.warning(f"Skipping cube '{cube_name}' — no data")
@@ -450,15 +470,34 @@ def publish_cube(session, cube_name, df, folder_id, description=""):
 
     table_name = "LINEAGE_DATA"
 
-    # Build column headers
     column_headers = []
     for col in df.columns:
-        column_headers.append({
-            "name": col,
-            "dataType": "STRING",
-        })
+        column_headers.append({"name": col, "dataType": "STRING"})
 
-    # All columns as string attributes for join capability
+    data_b64 = _df_to_base64(df)
+
+    # Check if dataset already exists
+    existing_id, existing_table_id = find_existing_dataset(session, cube_name)
+
+    if existing_id and existing_table_id:
+        log.info(f"Updating existing cube '{cube_name}' (ID: {existing_id})...")
+        update_body = {
+            "name": table_name,
+            "columnHeaders": column_headers,
+            "data": data_b64,
+        }
+        try:
+            session.patch(
+                f"datasets/{existing_id}/tables/{existing_table_id}",
+                json=update_body,
+                headers={"updatePolicy": "Replace"},
+            )
+            log.info(f"Replaced data in cube '{cube_name}' — Rows: {len(df)}")
+            return existing_id
+        except Exception as e:
+            log.warning(f"PATCH failed for '{cube_name}': {e}. Will try creating new.")
+
+    # Create new dataset
     attributes = []
     for col in df.columns:
         attributes.append({
@@ -472,20 +511,11 @@ def publish_cube(session, cube_name, df, folder_id, description=""):
             ],
         })
 
-    # Encode data as base64 JSON
-    data_b64 = _df_to_base64(df)
-
     create_body = {
         "name": cube_name,
         "description": description or f"Data Lineage - {cube_name}",
         "folderId": folder_id,
-        "tables": [
-            {
-                "name": table_name,
-                "columnHeaders": column_headers,
-                "data": data_b64,
-            }
-        ],
+        "tables": [{"name": table_name, "columnHeaders": column_headers, "data": data_b64}],
         "attributes": attributes,
         "metrics": [],
     }
@@ -498,16 +528,11 @@ def publish_cube(session, cube_name, df, folder_id, description=""):
         tables_resp = result.get("tables", [])
         if tables_resp:
             table_id = tables_resp[0].get("id", "")
-
         if not dataset_id:
-            log.error(f"Failed to create dataset '{cube_name}': no datasetId in response")
-            log.error(f"Response: {result}")
+            log.error(f"Failed to create dataset '{cube_name}': {result}")
             return None
-
-        log.info(f"Published cube '{cube_name}' (datasetId: {dataset_id}, tableId: {table_id})")
-        log.info(f"  Rows: {len(df)}, Columns: {len(df.columns)}")
+        log.info(f"Created cube '{cube_name}' (datasetId: {dataset_id}) — Rows: {len(df)}")
         return dataset_id
-
     except Exception as e:
         log.error(f"Failed to create dataset '{cube_name}': {e}")
         try:
@@ -534,7 +559,7 @@ def get_project_name(session, project_id):
     return project_id
 
 
-def extract_lineage(prod_session, dev_session, project_id, folder_id, timestamp):
+def extract_lineage(prod_session, dev_session, project_id, folder_id):
     """
     Extract full 5-level lineage from one project on PROD,
     publish 5 cubes to DEV.
@@ -569,7 +594,7 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id, timestamp)
         })
 
     l1_df = pd.DataFrame(l1_rows) if l1_rows else pd.DataFrame()
-    cube_name = f"Lineage_L1_{project_name}_{timestamp}"
+    cube_name = f"Lineage_L1_{project_name}"
     cube_ids["L1"] = publish_cube(dev_session, cube_name, l1_df, folder_id,
                                   f"L1 Dashboards/Documents for {project_name}")
 
@@ -604,7 +629,7 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id, timestamp)
     log.info(f"L2: Found {len(seen_l2)} unique datasets across {len(l2_rows)} relationships")
 
     l2_df = pd.DataFrame(l2_rows) if l2_rows else pd.DataFrame()
-    cube_name = f"Lineage_L2_{project_name}_{timestamp}"
+    cube_name = f"Lineage_L2_{project_name}"
     cube_ids["L2"] = publish_cube(dev_session, cube_name, l2_df, folder_id,
                                   f"L2 Datasets/Cubes for {project_name}")
 
@@ -646,7 +671,7 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id, timestamp)
     log.info(f"L3: Found {len(seen_l3)} unique metrics/attributes across {len(l3_rows)} relationships")
 
     l3_df = pd.DataFrame(l3_rows) if l3_rows else pd.DataFrame()
-    cube_name = f"Lineage_L3_{project_name}_{timestamp}"
+    cube_name = f"Lineage_L3_{project_name}"
     cube_ids["L3"] = publish_cube(dev_session, cube_name, l3_df, folder_id,
                                   f"L3 Metrics/Attributes for {project_name}")
 
@@ -689,7 +714,7 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id, timestamp)
     log.info(f"L4: Found {len(seen_l4)} unique facts/schema objects across {len(l4_rows)} relationships")
 
     l4_df = pd.DataFrame(l4_rows) if l4_rows else pd.DataFrame()
-    cube_name = f"Lineage_L4_{project_name}_{timestamp}"
+    cube_name = f"Lineage_L4_{project_name}"
     cube_ids["L4"] = publish_cube(dev_session, cube_name, l4_df, folder_id,
                                   f"L4 Facts/Schema Objects for {project_name}")
 
@@ -725,7 +750,7 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id, timestamp)
     log.info(f"L5: Found {len(l5_rows)} table/column entries")
 
     l5_df = pd.DataFrame(l5_rows) if l5_rows else pd.DataFrame()
-    cube_name = f"Lineage_L5_{project_name}_{timestamp}"
+    cube_name = f"Lineage_L5_{project_name}"
     cube_ids["L5"] = publish_cube(dev_session, cube_name, l5_df, folder_id,
                                   f"L5 Tables/Columns for {project_name}")
 
@@ -772,8 +797,6 @@ def main():
         log.error("MSTR_DEV_FOLDER_ID not set in .env")
         sys.exit(1)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-
     log.info(f"Starting 5-Level Data Lineage Extraction")
     log.info(f"PROD server: {prod_config['base_url']}")
     log.info(f"DEV server:  {dev_config['base_url']}")
@@ -793,7 +816,7 @@ def main():
         for idx, project_id in enumerate(project_ids):
             log.info(f"\n>>> Project {idx+1} of {len(project_ids)} <<<")
             try:
-                cube_ids = extract_lineage(prod_session, dev_session, project_id, folder_id, timestamp)
+                cube_ids = extract_lineage(prod_session, dev_session, project_id, folder_id)
                 all_cube_ids[project_id] = cube_ids
             except Exception as e:
                 log.error(f"Failed to process project {project_id}: {e}")
