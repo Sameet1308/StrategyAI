@@ -28,6 +28,9 @@ desktop.ini
 # Claude
 .claude/
 
+# Reference repos (cloned for local reference, not part of project)
+references/
+
 # Logs
 *.log
 logs/
