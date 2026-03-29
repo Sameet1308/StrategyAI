@@ -365,6 +365,44 @@ def _extract_expression_from_object(data):
 
 
 # ===========================================================================
+# FREEFORM SQL DETECTION & EXTRACTION
+# ===========================================================================
+
+def get_report_definition(session, report_id):
+    """
+    Get report definition via Model API. Detects freeform SQL vs schema-based.
+    Returns dict with source_type, sql, db_source, columns.
+    """
+    result = {"source_type": "unknown", "sql": "", "db_source": "", "columns": []}
+    try:
+        data = session.get(f"model/reports/{report_id}")
+        result["source_type"] = data.get("sourceType", "unknown")
+        if result["source_type"] == "custom_sql_free_form":
+            ds = data.get("dataSource", {})
+            table = ds.get("table", {})
+            phys = table.get("physicalTable", {})
+            sql_expr = phys.get("sqlExpression", {})
+            tree = sql_expr.get("tree", {})
+            children = tree.get("children", [])
+            if children:
+                result["sql"] = children[0].get("variant", {}).get("value", "")
+            if not result["sql"]:
+                result["sql"] = sql_expr.get("text", "")
+            result["columns"] = [c.get("name", "") for c in phys.get("columns", []) if c.get("name")]
+            result["db_source"] = table.get("dataSource", {}).get("name", "")
+            log.info(f"    Freeform SQL detected — SQL length: {len(result['sql'])}, DB: {result['db_source']}")
+    except Exception as e:
+        log.debug(f"Report definition failed for {report_id}: {e}")
+    return result
+
+
+def is_freeform_sql(session, report_id):
+    """Quick check if a report is freeform SQL."""
+    defn = get_report_definition(session, report_id)
+    return defn["source_type"] == "custom_sql_free_form", defn
+
+
+# ===========================================================================
 # TABLE / COLUMN / DATASOURCE ENRICHMENT
 # ===========================================================================
 
@@ -614,6 +652,9 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id):
             result_types=[TYPE_REPORT, TYPE_OLAP_CUBE, TYPE_SUPER_CUBE],
         )
         for comp in components:
+            is_ffsql, ffsql_defn = is_freeform_sql(prod_session, comp["id"])
+            comp["is_freeform_sql"] = is_ffsql
+            comp["ffsql_defn"] = ffsql_defn if is_ffsql else None
             l2_rows.append({
                 "project_id": project_id,
                 "l1_id": l1["id"],
@@ -622,6 +663,7 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id):
                 "l2_name": comp["name"],
                 "l2_type": type_name(comp["type"]),
                 "l2_subtype": str(comp["subtype"]),
+                "l2_source_type": "Freeform SQL" if is_ffsql else "Schema",
                 "l2_date_modified": comp["dateModified"],
             })
             seen_l2[comp["id"]] = comp
@@ -635,14 +677,43 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id):
 
     # -----------------------------------------------------------------------
     # LEVEL 3: Metrics / Attributes in each dataset (with expressions)
+    # For Freeform SQL: show SQL as expression, columns as L3 objects
+    # For Schema-based: normal metric/attribute traversal
     # -----------------------------------------------------------------------
     log.info("L3: Finding metrics/attributes for each dataset...")
     l3_rows = []
     seen_l3 = {}
+    ffsql_l5_rows = []
     unique_l2_list = list(seen_l2.values())
 
     for i, l2 in enumerate(unique_l2_list):
         log.info(f"  L3: Processing L2 {i+1}/{len(unique_l2_list)}: {l2['name']}")
+
+        if l2.get("is_freeform_sql") and l2.get("ffsql_defn"):
+            defn = l2["ffsql_defn"]
+            l3_rows.append({
+                "project_id": project_id,
+                "l2_id": l2["id"],
+                "l2_name": l2["name"],
+                "l3_id": f"{l2['id']}_FFSQL",
+                "l3_name": f"[Freeform SQL] {l2['name']}",
+                "l3_type": "Freeform SQL",
+                "l3_expression": defn["sql"],
+                "l3_expression_source": "Report Definition",
+            })
+            for col_name in defn["columns"]:
+                ffsql_l5_rows.append({
+                    "project_id": project_id,
+                    "l4_id": f"{l2['id']}_FFSQL",
+                    "l4_name": f"[Freeform SQL] {l2['name']}",
+                    "l5_table_id": f"{l2['id']}_FFSQL_TBL",
+                    "l5_table_name": "(from SQL query)",
+                    "l5_column_name": col_name,
+                    "l5_db_source": defn["db_source"],
+                })
+            log.info(f"    Freeform SQL: {len(defn['columns'])} columns, DB: {defn['db_source']}")
+            continue
+
         components = metadata_search(
             prod_session,
             used_by_id=l2["id"],
@@ -650,7 +721,6 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id):
             result_types=[TYPE_METRIC, TYPE_ATTRIBUTE],
         )
         for comp in components:
-            # Get expression with fallback
             if comp["type"] == TYPE_METRIC:
                 expr, source = get_metric_expression(prod_session, comp["id"])
             else:
@@ -747,7 +817,9 @@ def extract_lineage(prod_session, dev_session, project_id, folder_id):
                     "l5_db_source": db_source,
                 })
 
-    log.info(f"L5: Found {len(l5_rows)} table/column entries")
+    # Merge freeform SQL rows into L5
+    l5_rows.extend(ffsql_l5_rows)
+    log.info(f"L5: Found {len(l5_rows)} table/column entries ({len(ffsql_l5_rows)} from Freeform SQL)")
 
     l5_df = pd.DataFrame(l5_rows) if l5_rows else pd.DataFrame()
     cube_name = f"Lineage_L5_{project_name}"
