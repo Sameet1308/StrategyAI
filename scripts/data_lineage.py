@@ -22,10 +22,13 @@ import sys
 import os
 import argparse
 import logging
+import json
+import base64
 import time
 from datetime import datetime
 
 import urllib3
+import requests
 import pandas as pd
 
 # Suppress all SSL warnings
@@ -418,20 +421,28 @@ def _get_datasource_name(session, ds_id):
 # CUBE PUBLISHING — Push DataFrame to DEV server as dataset
 # ===========================================================================
 
+def _df_to_base64(df):
+    """Convert DataFrame rows to base64-encoded JSON string (Strategy push data format)."""
+    rows = []
+    for _, row in df.iterrows():
+        row_data = {}
+        for col in df.columns:
+            val = row[col]
+            row_data[col] = str(val) if pd.notna(val) else ""
+        rows.append(row_data)
+    json_str = json.dumps(rows)
+    return base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
+
+
 def publish_cube(session, cube_name, df, folder_id, description=""):
     """
     Publish a pandas DataFrame as a new dataset (cube) on the DEV server.
 
-    Uses Strategy REST API:
-      1. POST /api/datasets — create dataset with table/column definitions
-      2. PUT /api/datasets/{id}/tables/{name} — upload data
+    Uses Strategy Push Data API:
+      POST /api/datasets — create dataset with definition + base64-encoded data
 
-    Args:
-        session: authenticated DEV StrategySession
-        cube_name: name for the cube
-        df: pandas DataFrame with the data
-        folder_id: folder ID on DEV to place the cube
-        description: optional description
+    Data must be base64-encoded JSON array of objects.
+    Expressions use "TableName.ColumnName" format.
     """
     if df.empty:
         log.warning(f"Skipping cube '{cube_name}' — no data")
@@ -439,16 +450,15 @@ def publish_cube(session, cube_name, df, folder_id, description=""):
 
     table_name = "LINEAGE_DATA"
 
-    # Build column definitions
-    columns = []
+    # Build column headers
+    column_headers = []
     for col in df.columns:
-        columns.append({
+        column_headers.append({
             "name": col,
-            "dataType": "string",
+            "dataType": "STRING",
         })
 
-    # Build attribute and metric lists for dataset definition
-    # All columns as attributes (string dimensions) for join capability
+    # All columns as string attributes for join capability
     attributes = []
     for col in df.columns:
         attributes.append({
@@ -456,13 +466,15 @@ def publish_cube(session, cube_name, df, folder_id, description=""):
             "attributeForms": [
                 {
                     "category": "ID",
-                    "type": "text",
-                    "expression": {"formula": col},
+                    "expressions": [{"formula": f"{table_name}.{col}"}],
+                    "dataType": "STRING",
                 }
             ],
         })
 
-    # Create dataset definition
+    # Encode data as base64 JSON
+    data_b64 = _df_to_base64(df)
+
     create_body = {
         "name": cube_name,
         "description": description or f"Data Lineage - {cube_name}",
@@ -470,7 +482,8 @@ def publish_cube(session, cube_name, df, folder_id, description=""):
         "tables": [
             {
                 "name": table_name,
-                "columnHeaders": columns,
+                "columnHeaders": column_headers,
+                "data": data_b64,
             }
         ],
         "attributes": attributes,
@@ -481,60 +494,27 @@ def publish_cube(session, cube_name, df, folder_id, description=""):
         resp = session.post("datasets", json=create_body)
         result = resp.json()
         dataset_id = result.get("datasetId", "")
+        table_id = ""
+        tables_resp = result.get("tables", [])
+        if tables_resp:
+            table_id = tables_resp[0].get("id", "")
+
         if not dataset_id:
-            log.error(f"Failed to create dataset '{cube_name}': no datasetId returned")
+            log.error(f"Failed to create dataset '{cube_name}': no datasetId in response")
             log.error(f"Response: {result}")
             return None
-        log.info(f"Created dataset '{cube_name}' (ID: {dataset_id})")
+
+        log.info(f"Published cube '{cube_name}' (datasetId: {dataset_id}, tableId: {table_id})")
+        log.info(f"  Rows: {len(df)}, Columns: {len(df.columns)}")
+        return dataset_id
+
     except Exception as e:
         log.error(f"Failed to create dataset '{cube_name}': {e}")
-        return None
-
-    # Upload data in batches
-    batch_size = 10000
-    total_rows = len(df)
-
-    for start in range(0, total_rows, batch_size):
-        end = min(start + batch_size, total_rows)
-        batch = df.iloc[start:end]
-
-        # Convert to row format
-        rows = []
-        for _, row in batch.iterrows():
-            row_data = {}
-            for col in df.columns:
-                val = row[col]
-                row_data[col] = str(val) if pd.notna(val) else ""
-            rows.append(row_data)
-
-        update_body = {
-            "name": table_name,
-            "columnHeaders": columns,
-            "data": rows,
-        }
-
-        # updatePolicy: "add" for first batch, "add" for subsequent
-        update_policy = "add" if start == 0 else "add"
-
         try:
-            session.patch(
-                f"datasets/{dataset_id}/tables/{table_name}",
-                json=update_body,
-                headers={"updatePolicy": update_policy},
-            )
-            log.info(f"  Uploaded rows {start+1}-{end} of {total_rows}")
-        except Exception as e:
-            log.error(f"  Failed to upload batch {start}-{end}: {e}")
-
-    # Publish the dataset
-    try:
-        session.post(f"datasets/{dataset_id}/publish")
-        log.info(f"Published cube '{cube_name}' successfully")
-    except Exception:
-        # Some versions auto-publish; this endpoint may not exist
-        log.info(f"Cube '{cube_name}' created (auto-published or publish not needed)")
-
-    return dataset_id
+            log.error(f"Response body: {e.response.text}")
+        except Exception:
+            pass
+        return None
 
 
 # ===========================================================================
