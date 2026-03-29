@@ -2,29 +2,49 @@
 Strategy REST API authentication module.
 
 Handles login/logout and session token management.
-All scripts should use this instead of managing auth directly.
+Supports dual-server setup (PROD + DEV) via explicit base_url parameter.
 """
 
+import urllib3
 import requests
-from core.config import get_config
+
+# Suppress SSL warnings globally
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class StrategySession:
     """Manages an authenticated session with the Strategy REST API."""
 
-    def __init__(self):
-        self.config = get_config()
-        self.base_url = self.config["base_url"]
-        self.verify_ssl = self.config["verify_ssl"]
+    def __init__(self, base_url, username, password, verify_ssl=False, project_id=None):
+        self.base_url = base_url.rstrip("/")
+        self.username = username
+        self.password = password
+        self.verify_ssl = verify_ssl
+        self.project_id = project_id
         self.auth_token = None
         self.cookies = None
+
+    @classmethod
+    def from_config(cls, config, project_id=None):
+        """Create session from a config dict (from config.py)."""
+        return cls(
+            base_url=config["base_url"],
+            username=config["username"],
+            password=config["password"],
+            verify_ssl=config.get("verify_ssl", False),
+            project_id=project_id or config.get("project_id"),
+        )
+
+    def set_project(self, project_id):
+        """Switch to a different project (for multi-project iteration)."""
+        self.project_id = project_id
 
     def login(self):
         """Authenticate and store the session token."""
         url = f"{self.base_url}/auth/login"
         body = {
-            "username": self.config["username"],
-            "password": self.config["password"],
+            "username": self.username,
+            "password": self.password,
         }
         resp = requests.post(url, json=body, verify=self.verify_ssl)
         resp.raise_for_status()
@@ -34,7 +54,7 @@ class StrategySession:
         if not self.auth_token:
             raise RuntimeError("Login succeeded but no auth token received.")
 
-        print(f"Logged in as {self.config['username']}")
+        print(f"[AUTH] Logged in as {self.username} on {self.base_url}")
         return self
 
     def logout(self):
@@ -42,39 +62,63 @@ class StrategySession:
         if not self.auth_token:
             return
         url = f"{self.base_url}/auth/logout"
-        requests.post(url, headers=self._headers(), cookies=self.cookies, verify=self.verify_ssl)
+        try:
+            requests.post(url, headers=self._headers(), cookies=self.cookies, verify=self.verify_ssl)
+        except Exception:
+            pass
         self.auth_token = None
         self.cookies = None
-        print("Logged out.")
+        print(f"[AUTH] Logged out from {self.base_url}")
 
-    def get(self, endpoint, params=None):
-        """Make an authenticated GET request."""
+    def get(self, endpoint, params=None, headers=None):
+        """Make an authenticated GET request. Returns parsed JSON."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        resp = requests.get(url, headers=self._headers(), cookies=self.cookies,
+        h = {**self._headers(), **(headers or {})}
+        resp = requests.get(url, headers=h, cookies=self.cookies,
                             params=params, verify=self.verify_ssl)
         resp.raise_for_status()
         return resp.json()
 
-    def post(self, endpoint, json=None, params=None):
-        """Make an authenticated POST request."""
+    def get_raw(self, endpoint, params=None, headers=None):
+        """Make an authenticated GET request. Returns raw Response."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        resp = requests.post(url, headers=self._headers(), cookies=self.cookies,
+        h = {**self._headers(), **(headers or {})}
+        resp = requests.get(url, headers=h, cookies=self.cookies,
+                            params=params, verify=self.verify_ssl)
+        return resp
+
+    def post(self, endpoint, json=None, params=None, headers=None):
+        """Make an authenticated POST request. Returns raw Response."""
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        h = {**self._headers(), **(headers or {})}
+        resp = requests.post(url, headers=h, cookies=self.cookies,
                              json=json, params=params, verify=self.verify_ssl)
         resp.raise_for_status()
         return resp
 
-    def put(self, endpoint, json=None):
-        """Make an authenticated PUT request."""
+    def put(self, endpoint, json=None, params=None, headers=None):
+        """Make an authenticated PUT request. Returns raw Response."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        resp = requests.put(url, headers=self._headers(), cookies=self.cookies,
-                            json=json, verify=self.verify_ssl)
+        h = {**self._headers(), **(headers or {})}
+        resp = requests.put(url, headers=h, cookies=self.cookies,
+                            json=json, params=params, verify=self.verify_ssl)
         resp.raise_for_status()
         return resp
 
-    def delete(self, endpoint):
-        """Make an authenticated DELETE request."""
+    def patch(self, endpoint, json=None, headers=None):
+        """Make an authenticated PATCH request. Returns raw Response."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        resp = requests.delete(url, headers=self._headers(), cookies=self.cookies,
+        h = {**self._headers(), **(headers or {})}
+        resp = requests.patch(url, headers=h, cookies=self.cookies,
+                              json=json, verify=self.verify_ssl)
+        resp.raise_for_status()
+        return resp
+
+    def delete(self, endpoint, headers=None):
+        """Make an authenticated DELETE request. Returns raw Response."""
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        h = {**self._headers(), **(headers or {})}
+        resp = requests.delete(url, headers=h, cookies=self.cookies,
                                verify=self.verify_ssl)
         resp.raise_for_status()
         return resp
@@ -82,9 +126,8 @@ class StrategySession:
     def _headers(self):
         """Return auth headers for API requests."""
         h = {"X-MSTR-AuthToken": self.auth_token}
-        project_id = self.config.get("project_id")
-        if project_id:
-            h["X-MSTR-ProjectID"] = project_id
+        if self.project_id:
+            h["X-MSTR-ProjectID"] = self.project_id
         return h
 
     def __enter__(self):
