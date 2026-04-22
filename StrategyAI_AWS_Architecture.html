@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>StrategyAI — AWS Architecture (Customer-Deployed, Lean)</title>
+<style>
+  body { margin: 0; background: #F3F4F6; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+  h2 { max-width: 1040px; margin: 24px auto 4px; color: #111827; font-weight: 700; }
+  .sub { max-width: 1040px; margin: 0 auto 2px; color: #6B7280; font-size: 13px; }
+  .sub strong { color: #111827; }
+</style>
+</head>
+<body>
+<h2>StrategyAI — AWS Architecture</h2>
+<p class="sub"><strong>Deployment:</strong> StrategyAI runs in the <strong>client's AWS account</strong> (our network). <strong>MSTR (MCE / MicroStrategy Cloud Environment)</strong> is hosted by the vendor — reached over HTTPS. Users: Architects + LOB Admins. v1 scope: Subscription management + Cube operations.</p>
+
+<div style="margin:20px auto;max-width:1040px;background:#FAFBFC;border:1px solid rgba(0,0,0,0.08);border-radius:14px;padding:16px">
+<svg viewBox="0 0 1040 580" style="width:100%;height:auto;display:block;font-family:'Inter',sans-serif">
+
+  <defs>
+    <marker id="arrHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#4B5563"/>
+    </marker>
+    <marker id="arrHeadRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#DC2626"/>
+    </marker>
+    <filter id="iconShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <text x="520" y="18" fill="#0369A1" font-size="10" font-weight="700" letter-spacing="1.2" text-anchor="middle">CLIENT AWS ACCOUNT · MSTR CLOUD (MCE) ON VENDOR NETWORK · HTTPS EGRESS</text>
+
+  <!-- =================== ZONES =================== -->
+  <rect x="140" y="30" width="580" height="260" rx="12" fill="#E0F2FE" fill-opacity="0.45" stroke="#0EA5E9" stroke-width="1.2"/>
+  <text x="158" y="52" fill="#0369A1" font-size="11" font-weight="700" letter-spacing="0.6">API LAYER  (VPC · PRIVATE SUBNETS · MULTI-AZ)</text>
+
+  <rect x="740" y="30" width="280" height="260" rx="12" fill="#FEF3C7" fill-opacity="0.45" stroke="#D97706" stroke-width="1.2"/>
+  <text x="758" y="52" fill="#92400E" font-size="11" font-weight="700" letter-spacing="0.6">DATA LAYER</text>
+
+  <rect x="140" y="320" width="220" height="140" rx="12" fill="#DBEAFE" fill-opacity="0.45" stroke="#3B82F6" stroke-width="1.2"/>
+  <text x="158" y="342" fill="#1D4ED8" font-size="11" font-weight="700" letter-spacing="0.6">INGRESS LAYER</text>
+
+  <rect x="380" y="320" width="130" height="140" rx="12" fill="#FCE7F3" fill-opacity="0.5" stroke="#DB2777" stroke-width="1.2"/>
+  <text x="398" y="342" fill="#9D174D" font-size="11" font-weight="700" letter-spacing="0.6">AUTH LAYER</text>
+
+  <rect x="560" y="320" width="460" height="140" rx="12" fill="#FEE2E2" fill-opacity="0.45" stroke="#DC2626" stroke-width="1.2"/>
+  <text x="578" y="342" fill="#991B1B" font-size="11" font-weight="700" letter-spacing="0.6">MONITORING</text>
+
+  <rect x="140" y="480" width="880" height="70" rx="12" fill="#FEF2F2" fill-opacity="0.45" stroke="#991B1B" stroke-width="1.2" stroke-dasharray="6,4"/>
+  <text x="1010" y="499" fill="#991B1B" font-size="11" font-weight="700" letter-spacing="0.6" text-anchor="end">EXTERNAL · NOT ON AWS</text>
+
+  <!-- =================== USERS =================== -->
+  <g filter="url(#iconShadow)">
+    <rect x="30" y="125" width="50" height="50" rx="8" fill="#4B5563"/>
+    <circle cx="55" cy="147" r="7" fill="white"/>
+    <path d="M 42,168 Q 55,158 68,168 Z" fill="white"/>
+  </g>
+  <text x="55" y="190" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Architect</text>
+  <text x="55" y="203" fill="#6B7280" font-size="9" text-anchor="middle">schema / design</text>
+
+  <g filter="url(#iconShadow)">
+    <rect x="30" y="220" width="50" height="50" rx="8" fill="#4B5563"/>
+    <circle cx="55" cy="242" r="7" fill="white"/>
+    <path d="M 42,263 Q 55,253 68,263 Z" fill="white"/>
+  </g>
+  <text x="55" y="285" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">LOB Admin</text>
+  <text x="55" y="298" fill="#6B7280" font-size="9" text-anchor="middle">subs · cube ops</text>
+
+  <text x="55" y="105" fill="#6B7280" font-size="8.5" text-anchor="middle" font-style="italic">via corp VPN / ZTNA</text>
+
+  <!-- =================== API LAYER ICONS =================== -->
+  <!-- ECS Fargate (PRIMARY) -->
+  <g filter="url(#iconShadow)">
+    <rect x="220" y="100" width="70" height="70" rx="10" fill="#ED7100"/>
+    <rect x="234" y="114" width="16" height="16" fill="white" rx="2"/>
+    <rect x="254" y="114" width="16" height="16" fill="white" rx="2"/>
+    <rect x="274" y="114" width="16" height="16" fill="white" rx="2"/>
+    <rect x="234" y="134" width="16" height="16" fill="white" rx="2"/>
+    <rect x="254" y="134" width="16" height="16" fill="white" rx="2"/>
+    <rect x="274" y="134" width="16" height="16" fill="white" rx="2"/>
+  </g>
+  <text x="255" y="185" fill="#111827" font-size="10.5" font-weight="700" text-anchor="middle">ECS Fargate</text>
+  <text x="255" y="198" fill="#6B7280" font-size="9" text-anchor="middle">2×1vCPU/2GB · FastAPI</text>
+
+  <!-- Bedrock -->
+  <g filter="url(#iconShadow)">
+    <rect x="360" y="110" width="50" height="50" rx="8" fill="#01A88D"/>
+    <circle cx="385" cy="135" r="11" fill="none" stroke="white" stroke-width="1.8"/>
+    <text x="385" y="139" fill="white" font-size="11" font-weight="700" text-anchor="middle">AI</text>
+  </g>
+  <text x="385" y="175" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Bedrock</text>
+  <text x="385" y="188" fill="#6B7280" font-size="9" text-anchor="middle">Claude Sonnet</text>
+
+  <!-- IAM Role -->
+  <g filter="url(#iconShadow)">
+    <rect x="470" y="110" width="50" height="50" rx="8" fill="#991B1B"/>
+    <rect x="488" y="129" width="14" height="14" fill="none" stroke="white" stroke-width="1.8" rx="1"/>
+    <path d="M 491,129 V 125 Q 491,121 495,121 Q 499,121 499,125 V 129" fill="none" stroke="white" stroke-width="1.8"/>
+    <circle cx="495" cy="136" r="1.5" fill="white"/>
+  </g>
+  <text x="495" y="175" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">IAM Role</text>
+  <text x="495" y="188" fill="#6B7280" font-size="9" text-anchor="middle">Scoped · free</text>
+
+  <!-- VPC Endpoints (Interface) -->
+  <g filter="url(#iconShadow)">
+    <rect x="560" y="110" width="50" height="50" rx="8" fill="#8C4FFF"/>
+    <circle cx="575" cy="135" r="4" fill="white"/>
+    <circle cx="595" cy="135" r="4" fill="white"/>
+    <line x1="579" y1="135" x2="591" y2="135" stroke="white" stroke-width="2"/>
+    <line x1="575" y1="123" x2="575" y2="128" stroke="white" stroke-width="1.6"/>
+    <line x1="575" y1="142" x2="575" y2="147" stroke="white" stroke-width="1.6"/>
+    <line x1="595" y1="123" x2="595" y2="128" stroke="white" stroke-width="1.6"/>
+    <line x1="595" y1="142" x2="595" y2="147" stroke="white" stroke-width="1.6"/>
+  </g>
+  <text x="585" y="175" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">VPC Endpoints</text>
+  <text x="585" y="188" fill="#6B7280" font-size="9" text-anchor="middle">Bedrock · Secrets</text>
+
+  <!-- NAT Gateway (egress to MSTR Cloud / vendor SaaS) -->
+  <g filter="url(#iconShadow)">
+    <rect x="640" y="110" width="50" height="50" rx="8" fill="#8C4FFF"/>
+    <circle cx="652" cy="135" r="4" fill="white"/>
+    <line x1="656" y1="135" x2="679" y2="135" stroke="white" stroke-width="1.8"/>
+    <path d="M 674,130 L 680,135 L 674,140" fill="none" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+  </g>
+  <text x="665" y="175" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">NAT Gateway</text>
+  <text x="665" y="188" fill="#6B7280" font-size="9" text-anchor="middle">Egress to MCE</text>
+
+  <!-- =================== DATA LAYER ICONS =================== -->
+  <!-- RDS Postgres -->
+  <g filter="url(#iconShadow)">
+    <rect x="770" y="100" width="50" height="50" rx="8" fill="#3B48CC"/>
+    <ellipse cx="795" cy="114" rx="13" ry="3.5" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="782" y1="114" x2="782" y2="136" stroke="white" stroke-width="1.8"/>
+    <line x1="808" y1="114" x2="808" y2="136" stroke="white" stroke-width="1.8"/>
+    <ellipse cx="795" cy="136" rx="13" ry="3.5" fill="none" stroke="white" stroke-width="1.8"/>
+    <ellipse cx="795" cy="125" rx="13" ry="3.5" fill="none" stroke="white" stroke-width="1.2"/>
+  </g>
+  <text x="795" y="165" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">RDS Postgres</text>
+  <text x="795" y="178" fill="#6B7280" font-size="9" text-anchor="middle">t4g.small · audit + sessions</text>
+
+  <!-- Secrets Manager -->
+  <g filter="url(#iconShadow)">
+    <rect x="880" y="100" width="50" height="50" rx="8" fill="#991B1B"/>
+    <rect x="893" y="119" width="24" height="18" fill="none" stroke="white" stroke-width="1.8" rx="1.5"/>
+    <path d="M 898,119 V 113 Q 898,107 905,107 Q 912,107 912,113 V 119" fill="none" stroke="white" stroke-width="1.8"/>
+    <circle cx="905" cy="127" r="2" fill="white"/>
+  </g>
+  <text x="905" y="165" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Secrets Manager</text>
+  <text x="905" y="178" fill="#6B7280" font-size="9" text-anchor="middle">MSTR creds</text>
+
+  <!-- KMS -->
+  <g filter="url(#iconShadow)">
+    <rect x="825" y="210" width="50" height="50" rx="8" fill="#DD344C"/>
+    <circle cx="843" cy="232" r="5" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="848" y1="232" x2="865" y2="232" stroke="white" stroke-width="1.8"/>
+    <line x1="859" y1="232" x2="859" y2="238" stroke="white" stroke-width="1.8"/>
+    <line x1="864" y1="232" x2="864" y2="237" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="850" y="275" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">KMS</text>
+  <text x="850" y="287" fill="#6B7280" font-size="9" text-anchor="middle">Customer-managed keys</text>
+
+  <!-- =================== INGRESS LAYER =================== -->
+  <!-- Internal ALB -->
+  <g filter="url(#iconShadow)">
+    <rect x="185" y="360" width="50" height="50" rx="8" fill="#A166FF"/>
+    <circle cx="210" cy="385" r="6" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="210" y1="370" x2="210" y2="377" stroke="white" stroke-width="1.8"/>
+    <line x1="210" y1="393" x2="210" y2="400" stroke="white" stroke-width="1.8"/>
+    <line x1="195" y1="385" x2="202" y2="385" stroke="white" stroke-width="1.8"/>
+    <line x1="218" y1="385" x2="225" y2="385" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="210" y="425" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Internal ALB</text>
+  <text x="210" y="438" fill="#6B7280" font-size="9" text-anchor="middle">Private subnet</text>
+
+  <!-- S3 (private bundle) -->
+  <g filter="url(#iconShadow)">
+    <rect x="275" y="360" width="50" height="50" rx="8" fill="#569A31"/>
+    <ellipse cx="300" cy="373" rx="12" ry="3" fill="none" stroke="white" stroke-width="1.8"/>
+    <path d="M 288,373 V 397 Q 288,400 300,400 Q 312,400 312,397 V 373" fill="none" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="300" y="425" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">S3 (private)</text>
+  <text x="300" y="438" fill="#6B7280" font-size="9" text-anchor="middle">React bundle</text>
+
+  <!-- =================== AUTH LAYER =================== -->
+  <g filter="url(#iconShadow)">
+    <rect x="420" y="360" width="50" height="50" rx="8" fill="#DD344C"/>
+    <rect x="432" y="372" width="26" height="26" fill="none" stroke="white" stroke-width="1.8" rx="1.5"/>
+    <circle cx="445" cy="381" r="3.5" fill="white"/>
+    <path d="M 438,395 Q 445,389 452,395" fill="none" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="445" y="425" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Cognito</text>
+  <text x="445" y="438" fill="#6B7280" font-size="9" text-anchor="middle">SAML broker</text>
+
+  <!-- =================== MONITORING LAYER =================== -->
+  <g filter="url(#iconShadow)">
+    <rect x="640" y="360" width="50" height="50" rx="8" fill="#BF0816"/>
+    <circle cx="662" cy="382" r="9" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="669" y1="389" x2="676" y2="396" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+  <text x="665" y="425" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">CloudWatch</text>
+  <text x="665" y="438" fill="#6B7280" font-size="9" text-anchor="middle">Logs · metrics · alarms</text>
+
+  <g filter="url(#iconShadow)">
+    <rect x="830" y="360" width="50" height="50" rx="8" fill="#BF0816"/>
+    <circle cx="855" cy="385" r="4" fill="white"/>
+    <line x1="855" y1="372" x2="855" y2="378" stroke="white" stroke-width="1.8"/>
+    <line x1="855" y1="392" x2="855" y2="398" stroke="white" stroke-width="1.8"/>
+    <line x1="842" y1="385" x2="848" y2="385" stroke="white" stroke-width="1.8"/>
+    <line x1="862" y1="385" x2="868" y2="385" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="855" y="425" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">EventBridge</text>
+  <text x="855" y="438" fill="#6B7280" font-size="9" text-anchor="middle">Scheduled jobs</text>
+
+  <!-- =================== EXTERNAL BAND =================== -->
+  <!-- MSTR -->
+  <g filter="url(#iconShadow)">
+    <rect x="170" y="495" width="50" height="50" rx="8" fill="#991B1B"/>
+    <text x="195" y="525" fill="white" font-size="16" font-weight="800" text-anchor="middle">M</text>
+  </g>
+  <text x="234" y="512" fill="#111827" font-size="10.5" font-weight="700">MSTR Cloud (MCE) — vendor-hosted SaaS</text>
+  <text x="234" y="524" fill="#6B7280" font-size="9">MicroStrategy's network · REST API v2 (Sep 2025)</text>
+  <text x="234" y="536" fill="#6B7280" font-size="9" font-style="italic">Reached via HTTPS from NAT Gateway (or PrivateLink if offered)</text>
+
+  <!-- Customer IdP -->
+  <g filter="url(#iconShadow)">
+    <rect x="540" y="495" width="50" height="50" rx="8" fill="#991B1B"/>
+    <circle cx="565" cy="512" r="5" fill="white"/>
+    <path d="M 552,535 Q 565,523 578,535 Z" fill="white"/>
+    <rect x="561" y="519" width="8" height="3" fill="#991B1B"/>
+  </g>
+  <text x="604" y="512" fill="#111827" font-size="10.5" font-weight="700">Customer IdP</text>
+  <text x="604" y="524" fill="#6B7280" font-size="9">Okta · Azure AD · Ping (SAML / OIDC)</text>
+  <text x="604" y="536" fill="#6B7280" font-size="9" font-style="italic">Delegates user auth — no separate pool</text>
+
+  <text x="1010" y="524" fill="#111827" font-size="10" font-weight="700" text-anchor="end">Egress only to MCE</text>
+  <text x="1010" y="536" fill="#6B7280" font-size="9" text-anchor="end">NAT Gateway + domain allow-list</text>
+
+  <!-- =================== ARROWS =================== -->
+
+  <!-- 1. Admin → ALB -->
+  <path d="M 80,150 H 128 Q 134,150 134,156 V 379 Q 134,385 140,385 H 185"
+        stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="92" y="143" fill="#4B5563" font-size="9" font-style="italic">HTTPS</text>
+
+  <!-- 2. Architect → ALB -->
+  <path d="M 80,245 H 122 Q 128,245 128,251 V 379 Q 128,385 134,385 H 185"
+        stroke="#4B5563" stroke-width="1.2" fill="none" marker-end="url(#arrHead)"/>
+
+  <!-- 3. ALB → Fargate -->
+  <path d="M 210,360 V 306 Q 210,300 216,300 H 249 Q 255,300 255,294 V 170"
+        stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+
+  <!-- 4. Fargate → S3 (serve bundle, dashed) -->
+  <path d="M 245,170 V 296 Q 245,302 251,302 H 294 Q 300,302 300,308 V 360"
+        stroke="#4B5563" stroke-width="1.1" fill="none" stroke-dasharray="4,3" marker-end="url(#arrHead)"/>
+  <text x="255" y="293" fill="#4B5563" font-size="8.5" font-style="italic">serve bundle</text>
+
+  <!-- 5. Cognito → Fargate (token, dashed) -->
+  <path d="M 445,360 V 311 Q 445,305 439,305 H 271 Q 265,305 265,299 V 170"
+        stroke="#4B5563" stroke-width="1.2" fill="none" stroke-dasharray="3,3" marker-end="url(#arrHead)"/>
+  <text x="340" y="300" fill="#4B5563" font-size="9" font-style="italic">token / SAML</text>
+
+  <!-- 6. Fargate → Bedrock -->
+  <path d="M 290,135 H 360" stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="300" y="128" fill="#4B5563" font-size="9" font-style="italic">invoke</text>
+
+  <!-- 7. Fargate → RDS Postgres -->
+  <path d="M 255,170 V 234 Q 255,240 261,240 H 724 Q 730,240 730,234 V 131 Q 730,125 736,125 H 770"
+        stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="490" y="233" fill="#4B5563" font-size="9" font-style="italic">audit · sessions</text>
+
+  <!-- 8. Fargate → Secrets Manager (dashed) -->
+  <path d="M 260,170 V 244 Q 260,250 266,250 H 729 Q 735,250 735,244 V 131 Q 735,125 741,125 H 880"
+        stroke="#4B5563" stroke-width="1.2" fill="none" stroke-dasharray="3,3" marker-end="url(#arrHead)"/>
+  <text x="490" y="263" fill="#4B5563" font-size="9" font-style="italic">fetch MSTR creds</text>
+
+  <!-- 9. Fargate → CloudWatch -->
+  <path d="M 270,170 V 273 Q 270,279 276,279 H 659 Q 665,279 665,285 V 360"
+        stroke="#4B5563" stroke-width="1.2" fill="none" marker-end="url(#arrHead)"/>
+  <text x="390" y="273" fill="#4B5563" font-size="9" font-style="italic">logs · metrics</text>
+
+  <!-- 10. Fargate → NAT Gateway → MSTR Cloud (RED, public egress to vendor SaaS) -->
+  <path d="M 275,170 V 304 Q 275,310 281,310 H 529 Q 535,310 535,316 V 464 Q 535,470 529,470 H 201 Q 195,470 195,476 V 495"
+        stroke="#DC2626" stroke-width="1.9" fill="none" marker-end="url(#arrHeadRed)"/>
+  <text x="575" y="302" fill="#DC2626" font-size="10" font-weight="700">MSTR Cloud REST API · via NAT · HTTPS</text>
+
+  <!-- 11. Cognito ↔ Customer IdP (dashed) -->
+  <path d="M 450,410 V 454 Q 450,460 456,460 H 559 Q 565,460 565,466 V 495"
+        stroke="#4B5563" stroke-width="1.2" fill="none" stroke-dasharray="3,3" marker-end="url(#arrHead)"/>
+  <text x="475" y="453" fill="#4B5563" font-size="9" font-style="italic">SAML federation</text>
+
+  <!-- =================== LEGEND =================== -->
+  <line x1="140" y1="562" x2="1020" y2="562" stroke="#E5E7EB" stroke-width="1"/>
+
+  <line x1="150" y1="572" x2="180" y2="572" stroke="#4B5563" stroke-width="1.3"/>
+  <path d="M 178,569 L 183,572 L 178,575 Z" fill="#4B5563"/>
+  <text x="190" y="575" fill="#111827" font-size="9.5">AWS-internal flow</text>
+
+  <line x1="310" y1="572" x2="340" y2="572" stroke="#DC2626" stroke-width="1.9"/>
+  <path d="M 338,569 L 343,572 L 338,575 Z" fill="#DC2626"/>
+  <text x="350" y="575" fill="#111827" font-size="9.5" font-weight="700">External / policy-gated (private)</text>
+
+  <line x1="570" y1="572" x2="600" y2="572" stroke="#4B5563" stroke-width="1.2" stroke-dasharray="3,3"/>
+  <path d="M 598,569 L 603,572 L 598,575 Z" fill="#4B5563"/>
+  <text x="610" y="575" fill="#111827" font-size="9.5">Auth / secrets / token</text>
+
+  <line x1="770" y1="572" x2="800" y2="572" stroke="#4B5563" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <path d="M 798,569 L 803,572 L 798,575 Z" fill="#4B5563"/>
+  <text x="810" y="575" fill="#111827" font-size="9.5">Static content</text>
+
+  <text x="1010" y="575" fill="#6B7280" font-size="9" text-anchor="end" font-style="italic">v1 · lean baseline</text>
+
+</svg>
+</div>
+</body>
+</html>
