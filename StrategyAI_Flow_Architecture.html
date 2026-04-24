@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>StrategyAI — Flow + Architecture (Demo)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0B1120; --card:#FAFBFC; --muted:#94A3B8; --text:#E2E8F0; }
+  body { margin:0; padding:34px 16px 40px; background:linear-gradient(180deg,#0B1120,#1E293B); font-family:'Inter',sans-serif; min-height:100vh; }
+  h1 { color:var(--text); text-align:center; font-weight:700; font-size:24px; margin:0 0 8px; letter-spacing:-0.2px; }
+  .sub { color:var(--muted); text-align:center; font-size:12.5px; margin-bottom:26px; font-weight:500; }
+  .sub b { color:#CBD5E1; font-weight:600; }
+  .diagram-wrap { margin:0 auto; max-width:1100px; background:var(--card); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:18px; box-shadow:0 20px 60px -20px rgba(0,0,0,0.5); }
+  .steps { max-width:1100px; margin:16px auto 0; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:18px 24px; color:#CBD5E1; font-size:12px; line-height:1.9; }
+  .steps h3 { color:#F1F5F9; font-size:13px; font-weight:700; margin:0 0 12px; letter-spacing:0.3px; text-transform:uppercase; }
+  .steps b { color:#F1F5F9; font-weight:600; }
+  .steps code { background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:3px; font-size:11.5px; color:#E2E8F0; }
+  .num { display:inline-block; width:20px; height:20px; border-radius:10px; background:#334155; color:#fff; text-align:center; font-weight:700; font-size:11px; line-height:20px; margin-right:8px; vertical-align:1px; }
+  .num.e { background:#1D4ED8; } .num.m { background:#92400E; } .num.ai { background:#4C1D95; } .num.r { background:#991B1B; } .num.d { background:#CA8A04; }
+  .footnote { max-width:1100px; margin:12px auto 0; color:var(--muted); font-size:11px; line-height:1.6; padding:0 6px; }
+  .footnote b { color:#CBD5E1; }
+</style>
+</head>
+<body>
+
+<h1>StrategyAI — End-to-End Flow</h1>
+<div class="sub">One user action <b>"refresh cube ABC"</b> · 7 system lanes · 13 numbered hops in time order</div>
+
+<div class="diagram-wrap">
+<svg viewBox="0 0 1100 780" style="width:100%;height:auto;display:block;font-family:'Inter',sans-serif">
+
+  <defs>
+    <marker id="arrHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#4B5563"/>
+    </marker>
+    <marker id="arrHeadRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#DC2626"/>
+    </marker>
+    <filter id="iconShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-opacity="0.2"/>
+    </filter>
+    <filter id="numShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.4" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- ============= SWIM LANES ============= -->
+  <rect x="10"   y="60" width="145" height="700" rx="10" fill="#F1F5F9" fill-opacity="0.6"  stroke="#CBD5E1" stroke-width="1"/>
+  <rect x="155"  y="60" width="140" height="700" rx="10" fill="#DBEAFE" fill-opacity="0.35" stroke="#3B82F6" stroke-width="1"/>
+  <rect x="295"  y="60" width="155" height="700" rx="10" fill="#FCE7F3" fill-opacity="0.4"  stroke="#DB2777" stroke-width="1"/>
+  <rect x="450"  y="60" width="165" height="700" rx="10" fill="#FEF3C7" fill-opacity="0.35" stroke="#D97706" stroke-width="1"/>
+  <rect x="615"  y="60" width="145" height="700" rx="10" fill="#F3E8FF" fill-opacity="0.4"  stroke="#6B2FB3" stroke-width="1"/>
+  <rect x="760"  y="60" width="175" height="700" rx="10" fill="#FEF9C3" fill-opacity="0.4"  stroke="#CA8A04" stroke-width="1"/>
+  <rect x="935"  y="60" width="155" height="700" rx="10" fill="#FEE2E2" fill-opacity="0.4"  stroke="#991B1B" stroke-width="1" stroke-dasharray="5,3"/>
+
+  <!-- Lane headers -->
+  <text x="82"   y="82" text-anchor="middle" fill="#334155" font-size="11" font-weight="700" letter-spacing="0.9">USER</text>
+  <text x="225"  y="82" text-anchor="middle" fill="#1D4ED8" font-size="11" font-weight="700" letter-spacing="0.9">FRONTEND</text>
+  <text x="372"  y="82" text-anchor="middle" fill="#9D174D" font-size="11" font-weight="700" letter-spacing="0.9">EDGE + AUTH</text>
+  <text x="532"  y="82" text-anchor="middle" fill="#92400E" font-size="11" font-weight="700" letter-spacing="0.9">BACKEND (EKS)</text>
+  <text x="687"  y="82" text-anchor="middle" fill="#4C1D95" font-size="11" font-weight="700" letter-spacing="0.9">AI (BEDROCK)</text>
+  <text x="847"  y="82" text-anchor="middle" fill="#92400E" font-size="11" font-weight="700" letter-spacing="0.9">DATA</text>
+  <text x="1012" y="82" text-anchor="middle" fill="#991B1B" font-size="11" font-weight="700" letter-spacing="0.9">MSTR (VENDOR)</text>
+
+  <!-- ============= ICONS ============= -->
+
+  <!-- USER -->
+  <g transform="translate(58, 165)">
+    <circle cx="25" cy="18" r="12" fill="#374151"/>
+    <path d="M 2,62 Q 2,34 25,34 Q 48,34 48,62 Z" fill="#374151"/>
+  </g>
+  <text x="83" y="250" text-anchor="middle" fill="#111827" font-size="10.5" font-weight="600">Enterprise user</text>
+
+  <!-- FRONTEND: CloudFront -->
+  <g filter="url(#iconShadow)">
+    <rect x="200" y="155" width="50" height="50" rx="8" fill="#8C4FFF"/>
+    <circle cx="225" cy="180" r="13" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="212" y1="180" x2="238" y2="180" stroke="white" stroke-width="1.4"/>
+    <path d="M 225,167 Q 233,180 225,193" fill="none" stroke="white" stroke-width="1.4"/>
+    <path d="M 225,167 Q 217,180 225,193" fill="none" stroke="white" stroke-width="1.4"/>
+  </g>
+  <text x="225" y="218" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">CloudFront</text>
+
+  <!-- S3 React -->
+  <g filter="url(#iconShadow)">
+    <rect x="200" y="235" width="50" height="50" rx="8" fill="#569A31"/>
+    <ellipse cx="225" cy="248" rx="14" ry="4" fill="none" stroke="white" stroke-width="1.8"/>
+    <path d="M 211,248 L 214,275 Q 225,278 236,275 L 239,248" fill="none" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="225" y="298" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">S3 (React)</text>
+
+  <!-- Okta -->
+  <g filter="url(#iconShadow)">
+    <rect x="200" y="318" width="50" height="50" rx="8" fill="#007DC1"/>
+    <rect x="210" y="331" width="30" height="24" fill="none" stroke="white" stroke-width="1.6" rx="2"/>
+    <circle cx="218" cy="339" r="3" fill="none" stroke="white" stroke-width="1.4"/>
+    <path d="M 213,350 Q 218,346 223,350" fill="none" stroke="white" stroke-width="1.4"/>
+    <line x1="227" y1="339" x2="236" y2="339" stroke="white" stroke-width="1.3"/>
+    <line x1="227" y1="344" x2="236" y2="344" stroke="white" stroke-width="1.3"/>
+    <line x1="227" y1="349" x2="236" y2="349" stroke="white" stroke-width="1.3"/>
+  </g>
+  <text x="225" y="381" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">Okta</text>
+
+  <!-- EDGE: WAF -->
+  <g filter="url(#iconShadow)">
+    <rect x="347" y="155" width="50" height="50" rx="8" fill="#DD344C"/>
+    <path d="M 372,163 L 390,171 L 388,189 L 372,197 L 356,189 L 354,171 Z" fill="none" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M 364,179 L 370,185 L 380,173" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="372" y="218" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">AWS WAF</text>
+
+  <!-- API Gateway -->
+  <g filter="url(#iconShadow)">
+    <rect x="347" y="240" width="50" height="50" rx="8" fill="#8C4FFF"/>
+    <circle cx="372" cy="265" r="6" fill="none" stroke="white" stroke-width="1.8"/>
+    <circle cx="360" cy="253" r="2.6" fill="white"/>
+    <circle cx="384" cy="253" r="2.6" fill="white"/>
+    <circle cx="360" cy="277" r="2.6" fill="white"/>
+    <circle cx="384" cy="277" r="2.6" fill="white"/>
+  </g>
+  <text x="372" y="303" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">API Gateway</text>
+
+  <!-- Internal ALB -->
+  <g filter="url(#iconShadow)">
+    <rect x="347" y="325" width="50" height="50" rx="8" fill="#A166FF"/>
+    <circle cx="372" cy="338" r="5" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="372" y1="343" x2="372" y2="366" stroke="white" stroke-width="1.8"/>
+    <line x1="372" y1="361" x2="360" y2="367" stroke="white" stroke-width="1.8"/>
+    <line x1="372" y1="361" x2="384" y2="367" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="372" y="388" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">Internal ALB</text>
+
+  <!-- BACKEND: EKS FastAPI -->
+  <g filter="url(#iconShadow)">
+    <rect x="497" y="225" width="70" height="70" rx="10" fill="#ED7100"/>
+    <polygon points="532,233 555,247 555,273 532,287 509,273 509,247" fill="none" stroke="white" stroke-width="1.8"/>
+    <circle cx="532" cy="260" r="5" fill="white"/>
+    <line x1="532" y1="233" x2="532" y2="243" stroke="white" stroke-width="1.6"/>
+    <line x1="555" y1="247" x2="546" y2="252" stroke="white" stroke-width="1.6"/>
+    <line x1="555" y1="273" x2="546" y2="268" stroke="white" stroke-width="1.6"/>
+    <line x1="532" y1="287" x2="532" y2="277" stroke="white" stroke-width="1.6"/>
+    <line x1="509" y1="273" x2="518" y2="268" stroke="white" stroke-width="1.6"/>
+    <line x1="509" y1="247" x2="518" y2="252" stroke="white" stroke-width="1.6"/>
+  </g>
+  <text x="532" y="310" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">EKS · FastAPI pod</text>
+
+  <!-- SQS -->
+  <g filter="url(#iconShadow)">
+    <rect x="507" y="350" width="50" height="50" rx="8" fill="#DC3545"/>
+    <rect x="518" y="360" width="28" height="8" fill="white" rx="1"/>
+    <rect x="518" y="371" width="28" height="8" fill="white" rx="1"/>
+    <rect x="518" y="382" width="28" height="8" fill="white" rx="1"/>
+  </g>
+  <text x="532" y="413" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">SQS · job queue</text>
+
+  <!-- EKS Worker -->
+  <g filter="url(#iconShadow)">
+    <rect x="497" y="445" width="70" height="70" rx="10" fill="#ED7100"/>
+    <polygon points="532,453 555,467 555,493 532,507 509,493 509,467" fill="none" stroke="white" stroke-width="1.8"/>
+    <circle cx="532" cy="480" r="5" fill="white"/>
+    <line x1="532" y1="453" x2="532" y2="463" stroke="white" stroke-width="1.6"/>
+    <line x1="555" y1="467" x2="546" y2="472" stroke="white" stroke-width="1.6"/>
+    <line x1="555" y1="493" x2="546" y2="488" stroke="white" stroke-width="1.6"/>
+    <line x1="532" y1="507" x2="532" y2="497" stroke="white" stroke-width="1.6"/>
+    <line x1="509" y1="493" x2="518" y2="488" stroke="white" stroke-width="1.6"/>
+    <line x1="509" y1="467" x2="518" y2="472" stroke="white" stroke-width="1.6"/>
+  </g>
+  <text x="532" y="530" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">EKS · Worker pod</text>
+
+  <!-- BEDROCK -->
+  <g filter="url(#iconShadow)">
+    <rect x="662" y="290" width="50" height="50" rx="8" fill="#6B2FB3"/>
+    <rect x="672" y="298" width="30" height="4" fill="white" rx="1"/>
+    <rect x="674" y="306" width="26" height="4" fill="white" rx="1"/>
+    <rect x="676" y="314" width="22" height="4" fill="white" rx="1"/>
+    <rect x="679" y="322" width="16" height="4" fill="white" rx="1"/>
+  </g>
+  <text x="687" y="355" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">Amazon Bedrock</text>
+  <text x="687" y="367" text-anchor="middle" fill="#4C1D95" font-size="8.5" font-weight="700">called TWICE · intent + summary</text>
+
+  <!-- DATA: RDS -->
+  <g filter="url(#iconShadow)">
+    <rect x="810" y="440" width="50" height="50" rx="8" fill="#3B48CC"/>
+    <ellipse cx="835" cy="452" rx="15" ry="4" fill="none" stroke="white" stroke-width="1.8"/>
+    <path d="M 820,452 V 477 Q 820,481 835,481 Q 850,481 850,477 V 452" fill="none" stroke="white" stroke-width="1.8"/>
+    <ellipse cx="835" cy="464" rx="15" ry="3.5" fill="none" stroke="white" stroke-width="1.2"/>
+  </g>
+  <text x="892" y="458" fill="#111827" font-size="10" font-weight="600">RDS PostgreSQL</text>
+  <text x="892" y="471" fill="#6B7280" font-size="9">audit · chat · pgvector</text>
+
+  <!-- Redis -->
+  <g filter="url(#iconShadow)">
+    <rect x="810" y="540" width="50" height="50" rx="8" fill="#C7256F"/>
+    <rect x="820" y="552" width="30" height="5" fill="white" rx="1"/>
+    <rect x="820" y="562" width="30" height="5" fill="white" rx="1"/>
+    <rect x="820" y="572" width="30" height="5" fill="white" rx="1"/>
+  </g>
+  <text x="892" y="558" fill="#111827" font-size="10" font-weight="600">Redis</text>
+  <text x="892" y="571" fill="#6B7280" font-size="9">live status + summary</text>
+
+  <!-- S3 Artifacts -->
+  <g filter="url(#iconShadow)">
+    <rect x="810" y="630" width="50" height="50" rx="8" fill="#569A31"/>
+    <ellipse cx="835" cy="643" rx="14" ry="4" fill="none" stroke="white" stroke-width="1.8"/>
+    <path d="M 821,643 L 824,670 Q 835,673 846,670 L 849,643" fill="none" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="892" y="648" fill="#111827" font-size="10" font-weight="600">S3 Artifacts</text>
+  <text x="892" y="661" fill="#6B7280" font-size="9">PDFs, exports</text>
+
+  <!-- MSTR PrivateLink -->
+  <g filter="url(#iconShadow)">
+    <rect x="985" y="430" width="50" height="50" rx="8" fill="#8C4FFF"/>
+    <path d="M 994,452 Q 997,446 1004,452 Q 1011,458 1014,452" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="996" y1="452" x2="1012" y2="452" stroke="white" stroke-width="1.6" stroke-dasharray="2,2"/>
+    <text x="1010" y="466" fill="white" font-size="7" font-weight="700" text-anchor="middle">PL</text>
+  </g>
+  <text x="1010" y="493" text-anchor="middle" fill="#111827" font-size="9.5" font-weight="600">PrivateLink</text>
+
+  <!-- MSTR -->
+  <g filter="url(#iconShadow)">
+    <rect x="985" y="520" width="50" height="50" rx="8" fill="#991B1B"/>
+    <ellipse cx="1010" cy="532" rx="15" ry="4" fill="none" stroke="white" stroke-width="1.8"/>
+    <path d="M 995,532 V 557 Q 995,561 1010,561 Q 1025,561 1025,557 V 532" fill="none" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="1010" y="583" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">MSTR</text>
+  <text x="1010" y="595" text-anchor="middle" fill="#6B7280" font-size="8.5">vendor network</text>
+
+  <!-- ============= NUMBERED ARROWS ============= -->
+
+  <!-- STEP 1: User → CloudFront → S3 (dashed) -->
+  <path d="M 110,180 H 198" stroke="#4B5563" stroke-width="1.3" fill="none" stroke-dasharray="4,3" marker-end="url(#arrHead)"/>
+  <path d="M 225,205 V 232" stroke="#4B5563" stroke-width="1.3" fill="none" stroke-dasharray="4,3" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="135" cy="167" r="11" fill="#1D4ED8"/></g>
+  <text x="135" y="171" fill="white" font-size="11" font-weight="700" text-anchor="middle">1</text>
+  <text x="152" y="171" fill="#1D4ED8" font-size="9.5" font-weight="600" font-style="italic">loads React</text>
+
+  <!-- STEP 2: User → Okta (dashed) -->
+  <path d="M 112,222 V 339 Q 112,345 118,345 H 198" stroke="#4B5563" stroke-width="1.3" fill="none" stroke-dasharray="3,3" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="125" cy="280" r="11" fill="#1D4ED8"/></g>
+  <text x="125" y="284" fill="white" font-size="11" font-weight="700" text-anchor="middle">2</text>
+  <text x="141" y="284" fill="#1D4ED8" font-size="9.5" font-weight="600" font-style="italic">login · JWT</text>
+
+  <!-- STEP 3: User → WAF (top corridor above all Frontend icons) -->
+  <path d="M 80,155 V 112 Q 80,106 86,106 H 366 Q 372,106 372,112 V 153" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="225" cy="106" r="12" fill="#92400E"/></g>
+  <text x="225" y="110" fill="white" font-size="11" font-weight="700" text-anchor="middle">3</text>
+  <text x="246" y="110" fill="#92400E" font-size="10" font-weight="600" font-style="italic">API call with JWT</text>
+
+  <!-- STEP 4: WAF → API Gateway (label LEFT of arrow) -->
+  <path d="M 372,205 V 238" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="325" cy="221" r="11" fill="#92400E"/></g>
+  <text x="325" y="225" fill="white" font-size="11" font-weight="700" text-anchor="middle">4</text>
+  <text x="310" y="225" fill="#92400E" font-size="9.5" font-weight="600" font-style="italic" text-anchor="end">filter</text>
+
+  <!-- STEP 5: API Gateway → ALB (label LEFT of arrow) -->
+  <path d="M 372,290 V 323" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="325" cy="307" r="11" fill="#92400E"/></g>
+  <text x="325" y="311" fill="white" font-size="11" font-weight="700" text-anchor="middle">5</text>
+  <text x="310" y="311" fill="#92400E" font-size="9.5" font-weight="600" font-style="italic" text-anchor="end">validate &amp; forward</text>
+
+  <!-- STEP 6: ALB → FastAPI -->
+  <path d="M 397,350 H 495" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="425" cy="338" r="11" fill="#92400E"/></g>
+  <text x="425" y="342" fill="white" font-size="11" font-weight="700" text-anchor="middle">6</text>
+  <text x="443" y="342" fill="#92400E" font-size="9.5" font-weight="600" font-style="italic">route</text>
+
+  <!-- STEP 7: FastAPI ↔ Bedrock (intent, 2 arrows) -->
+  <path d="M 567,250 H 660" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <path d="M 662,282 H 569" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="615" cy="230" r="11" fill="#4C1D95"/></g>
+  <text x="615" y="234" fill="white" font-size="11" font-weight="700" text-anchor="middle">7</text>
+  <text x="632" y="234" fill="#4C1D95" font-size="9.5" font-weight="600" font-style="italic">intent ↔ payload</text>
+
+  <!-- STEP 8: FastAPI → SQS → Worker -->
+  <path d="M 532,296 V 347" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <path d="M 532,403 V 442" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="585" cy="375" r="11" fill="#92400E"/></g>
+  <text x="585" y="379" fill="white" font-size="11" font-weight="700" text-anchor="middle">8</text>
+  <text x="601" y="379" fill="#92400E" font-size="9.5" font-weight="600" font-style="italic">enqueue · dequeue</text>
+
+  <!-- STEP 9: Worker → MSTR (RED) -->
+  <path d="M 569,460 H 982" stroke="#DC2626" stroke-width="1.8" fill="none" marker-end="url(#arrHeadRed)"/>
+  <g filter="url(#numShadow)"><circle cx="600" cy="447" r="11" fill="#991B1B"/></g>
+  <text x="600" y="451" fill="white" font-size="11" font-weight="700" text-anchor="middle">9</text>
+  <text x="695" y="451" fill="#DC2626" font-size="9.5" font-weight="700" font-style="italic">MSTR REST · via PrivateLink</text>
+
+  <!-- STEP 10: MSTR → Worker (RED dashed) -->
+  <path d="M 982,490 H 569" stroke="#DC2626" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#arrHeadRed)"/>
+  <g filter="url(#numShadow)"><circle cx="955" cy="503" r="11" fill="#991B1B"/></g>
+  <text x="955" y="507" fill="white" font-size="11" font-weight="700" text-anchor="middle">10</text>
+  <text x="858" y="507" fill="#DC2626" font-size="9.5" font-weight="700" font-style="italic" text-anchor="end">poll until done</text>
+
+  <!-- STEP 11: Worker ↔ Bedrock (reason, 2 arrows routed through AI lane) -->
+  <!-- Out: Worker right → enter AI lane → up → Bedrock left -->
+  <path d="M 567,455 H 614 Q 620,455 620,449 V 346 Q 620,340 626,340 H 660" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <!-- Return: Bedrock right → down through AI lane → Worker right -->
+  <path d="M 712,320 H 732 Q 738,320 738,326 V 480 Q 738,486 732,486 H 569" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="640" cy="395" r="11" fill="#4C1D95"/></g>
+  <text x="640" y="399" fill="white" font-size="11" font-weight="700" text-anchor="middle">11</text>
+  <text x="657" y="399" fill="#4C1D95" font-size="9.5" font-weight="600" font-style="italic">reason &amp; summarize</text>
+
+  <!-- STEP 12: Worker → RDS + Redis + S3 (fan-out from Worker bottom) -->
+  <path d="M 515,515 V 533 Q 515,539 521,539 H 804 Q 810,539 810,533 V 492" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <path d="M 530,515 V 566 Q 530,572 536,572 H 806" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <path d="M 545,515 V 655 Q 545,661 551,661 H 806" stroke="#4B5563" stroke-width="1.4" fill="none" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="578" cy="538" r="11" fill="#CA8A04"/></g>
+  <text x="578" y="542" fill="white" font-size="11" font-weight="700" text-anchor="middle">12</text>
+  <text x="595" y="542" fill="#CA8A04" font-size="9.5" font-weight="600" font-style="italic">persist · audit · artifacts</text>
+
+  <!-- STEP 13: Redis → User (return summary, dashed long path at bottom) -->
+  <path d="M 810,565 H 776 Q 770,565 770,571 V 694 Q 770,700 764,700 H 116 Q 110,700 110,694 V 222" stroke="#4B5563" stroke-width="1.3" fill="none" stroke-dasharray="4,3" marker-end="url(#arrHead)"/>
+  <g filter="url(#numShadow)"><circle cx="500" cy="690" r="12" fill="#1D4ED8"/></g>
+  <text x="500" y="694" fill="white" font-size="11" font-weight="700" text-anchor="middle">13</text>
+  <text x="520" y="694" fill="#1D4ED8" font-size="10" font-weight="600" font-style="italic">returns summary · UI displays result (user polls /jobs/{id} every 2-3s)</text>
+
+  <!-- ============= LEGEND ============= -->
+  <g transform="translate(40, 748)">
+    <text x="0" y="0" fill="#6B7280" font-size="9.5" font-weight="700" letter-spacing="1">LEGEND:</text>
+    <line x1="58" y1="-3" x2="84" y2="-3" stroke="#4B5563" stroke-width="1.4"/>
+    <text x="88" y="0" fill="#4B5563" font-size="10">AWS-internal</text>
+    <line x1="182" y1="-3" x2="208" y2="-3" stroke="#DC2626" stroke-width="1.8"/>
+    <text x="212" y="0" fill="#4B5563" font-size="10">External · PrivateLink</text>
+    <line x1="352" y1="-3" x2="378" y2="-3" stroke="#4B5563" stroke-width="1.3" stroke-dasharray="3,3"/>
+    <text x="382" y="0" fill="#4B5563" font-size="10">Auth · page load · polling / return</text>
+    <circle cx="600" cy="-3" r="9" fill="#334155"/>
+    <text x="600" y="1" fill="white" font-size="10" font-weight="700" text-anchor="middle">N</text>
+    <text x="616" y="0" fill="#4B5563" font-size="10">step number (chronological)</text>
+  </g>
+
+</svg>
+</div>
+
+<div class="steps">
+<h3>Sequence — "refresh cube ABC"</h3>
+<span class="num e">1</span>User loads the React SPA from <b>CloudFront</b> → <b>S3</b>.<br>
+<span class="num e">2</span>User logs in via <b>Okta</b> — browser receives JWT with Azure AD group claims.<br>
+<span class="num m">3</span>User types <code>"refresh cube ABC"</code> → browser POSTs to <b>AWS WAF</b> with the JWT.<br>
+<span class="num m">4</span>WAF applies OWASP rules and forwards to <b>API Gateway</b>.<br>
+<span class="num m">5</span>API Gateway validates the Okta JWT via JWKS and forwards to <b>Internal ALB</b>.<br>
+<span class="num m">6</span>ALB routes to an <b>EKS FastAPI</b> pod; FastAPI checks AD-group RBAC.<br>
+<span class="num ai">7</span>FastAPI sends the chat text to <b>Amazon Bedrock</b> → receives <code>{intent, payload}</code>.<br>
+<span class="num m">8</span>FastAPI drops the job on <b>SQS</b>, returns <code>{job_id}</code>; a <b>Worker pod</b> dequeues it.<br>
+<span class="num r">9</span>Worker calls MSTR REST over <b>AWS PrivateLink</b> using the admin service account.<br>
+<span class="num r">10</span>Worker polls MSTR every few seconds until the operation finishes.<br>
+<span class="num ai">11</span>Worker sends raw MSTR result back to <b>Bedrock</b> (second call) → plain-English summary.<br>
+<span class="num d">12</span>Worker persists: audit row + chat → <b>RDS</b>; live status + summary → <b>Redis</b>; large files → <b>S3</b>.<br>
+<span class="num e">13</span>Browser has been polling <code>/jobs/{id}</code> — FastAPI reads Redis → <b>returns summary → UI displays the result</b>.
+</div>
+
+<div class="footnote">
+<b>Cross-cutting (not drawn):</b> Secrets Manager reads via IRSA on every pod · CloudWatch logs + metrics from every AWS service and pod · KMS envelope encryption on RDS / S3 / Secrets Manager · ECR image pulls on pod start. These happen continuously, not at any single step — omitted to keep the main flow readable.
+</div>
+
+</body>
+</html>

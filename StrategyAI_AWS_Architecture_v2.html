@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>StrategyAI — AWS Architecture (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; padding:30px 16px; background:linear-gradient(180deg,#0B1120,#1E293B); font-family:'Inter',sans-serif; min-height:100vh; }
+  h1 { color:#E2E8F0; text-align:center; font-weight:700; font-size:22px; margin:0 0 6px; letter-spacing:0.3px; }
+  .sub { color:#94A3B8; text-align:center; font-size:12px; margin-bottom:22px; }
+  .footnote { max-width:1040px; margin:14px auto 0; color:#94A3B8; font-size:11px; line-height:1.5; }
+  .footnote b { color:#CBD5E1; }
+</style>
+</head>
+<body>
+<h1>StrategyAI — AWS Architecture</h1>
+<div class="sub">Enterprise AWS · EKS on EC2 node groups · Okta + Azure AD · Amazon Bedrock (LLM) · PrivateLink to vendor MSTR</div>
+
+<div style="margin:0 auto;max-width:1040px;background:#FAFBFC;border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:16px">
+<svg viewBox="0 0 1040 580" style="width:100%;height:auto;display:block;font-family:'Inter',sans-serif">
+
+  <defs>
+    <marker id="arrHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#4B5563"/>
+    </marker>
+    <marker id="arrHeadRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#DC2626"/>
+    </marker>
+    <filter id="iconShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- ============= ZONES ============= -->
+  <rect x="140" y="30"  width="580" height="260" rx="12" fill="#E0F2FE" fill-opacity="0.45" stroke="#0EA5E9" stroke-width="1.2"/>
+  <text x="158" y="52" fill="#0369A1" font-size="11" font-weight="700" letter-spacing="0.6">API LAYER  (VPC · PRIVATE SUBNETS)</text>
+
+  <rect x="740" y="30"  width="280" height="260" rx="12" fill="#FEF3C7" fill-opacity="0.45" stroke="#D97706" stroke-width="1.2"/>
+  <text x="758" y="52" fill="#92400E" font-size="11" font-weight="700" letter-spacing="0.6">DATA LAYER</text>
+
+  <rect x="140" y="320" width="220" height="140" rx="12" fill="#DBEAFE" fill-opacity="0.45" stroke="#3B82F6" stroke-width="1.2"/>
+  <text x="158" y="342" fill="#1D4ED8" font-size="11" font-weight="700" letter-spacing="0.6">FRONTEND  (CDN)</text>
+
+  <rect x="380" y="320" width="130" height="140" rx="12" fill="#FCE7F3" fill-opacity="0.5"  stroke="#DB2777" stroke-width="1.2" stroke-dasharray="5,3"/>
+  <text x="398" y="342" fill="#9D174D" font-size="11" font-weight="700" letter-spacing="0.6">IDENTITY</text>
+
+  <rect x="560" y="320" width="460" height="140" rx="12" fill="#FEE2E2" fill-opacity="0.45" stroke="#DC2626" stroke-width="1.2"/>
+  <text x="578" y="342" fill="#991B1B" font-size="11" font-weight="700" letter-spacing="0.6">MONITORING  &amp;  SECURITY</text>
+
+  <!-- AI zone (AWS-internal, solid border) -->
+  <rect x="140" y="480" width="380" height="70" rx="10" fill="#F3E8FF" fill-opacity="0.45" stroke="#6B2FB3" stroke-width="1.2"/>
+  <text x="158" y="498" fill="#4C1D95" font-size="11" font-weight="700" letter-spacing="0.6">AI / LLM LAYER  ·  AWS-MANAGED</text>
+
+  <!-- External vendor zone (outside AWS, dashed border) -->
+  <rect x="540" y="480" width="480" height="70" rx="10" fill="#FEF2F2" fill-opacity="0.45" stroke="#991B1B" stroke-width="1.2" stroke-dasharray="5,3"/>
+  <text x="558" y="498" fill="#991B1B" font-size="11" font-weight="700" letter-spacing="0.6">EXTERNAL  (OUTSIDE AWS)  ·  VENDOR MSTR</text>
+
+  <!-- ============= USER ============= -->
+  <g transform="translate(30, 130)">
+    <circle cx="35" cy="22" r="14" fill="#374151"/>
+    <path d="M 7,80 Q 7,44 35,44 Q 63,44 63,80 Z" fill="#374151"/>
+  </g>
+  <text x="65" y="235" fill="#111827" font-size="12" font-weight="600" text-anchor="middle">User</text>
+  <text x="65" y="249" fill="#6B7280" font-size="9" text-anchor="middle">enterprise user</text>
+
+  <!-- ============= API LAYER ICONS ============= -->
+
+  <!-- WAF -->
+  <g filter="url(#iconShadow)">
+    <rect x="155" y="120" width="50" height="50" rx="8" fill="#DD344C"/>
+    <path d="M 180,128 L 198,136 L 196,154 L 180,162 L 164,154 L 162,136 Z" fill="none" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M 172,144 L 178,150 L 188,138" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="180" y="185" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">AWS WAF</text>
+  <text x="180" y="198" fill="#6B7280" font-size="9"  text-anchor="middle">OWASP rules</text>
+
+  <!-- API Gateway -->
+  <g filter="url(#iconShadow)">
+    <rect x="245" y="120" width="50" height="50" rx="8" fill="#8C4FFF"/>
+    <circle cx="270" cy="145" r="6" fill="none" stroke="white" stroke-width="1.8"/>
+    <circle cx="258" cy="133" r="2.6" fill="white"/>
+    <circle cx="282" cy="133" r="2.6" fill="white"/>
+    <circle cx="258" cy="157" r="2.6" fill="white"/>
+    <circle cx="282" cy="157" r="2.6" fill="white"/>
+    <line x1="265" y1="141" x2="261" y2="136" stroke="white" stroke-width="1.3"/>
+    <line x1="275" y1="141" x2="279" y2="136" stroke="white" stroke-width="1.3"/>
+    <line x1="265" y1="149" x2="261" y2="154" stroke="white" stroke-width="1.3"/>
+    <line x1="275" y1="149" x2="279" y2="154" stroke="white" stroke-width="1.3"/>
+  </g>
+  <text x="270" y="185" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">API Gateway</text>
+  <text x="270" y="198" fill="#6B7280" font-size="9"  text-anchor="middle">Okta JWT auth</text>
+
+  <!-- Internal ALB -->
+  <g filter="url(#iconShadow)">
+    <rect x="335" y="120" width="50" height="50" rx="8" fill="#A166FF"/>
+    <circle cx="360" cy="133" r="5" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="360" y1="138" x2="360" y2="161" stroke="white" stroke-width="1.8"/>
+    <line x1="360" y1="156" x2="348" y2="162" stroke="white" stroke-width="1.8"/>
+    <line x1="360" y1="156" x2="372" y2="162" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="360" y="185" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Internal ALB</text>
+  <text x="360" y="198" fill="#6B7280" font-size="9"  text-anchor="middle">L7 routing</text>
+
+  <!-- EKS (PRIMARY 70x70) -->
+  <g filter="url(#iconShadow)">
+    <rect x="425" y="110" width="70" height="70" rx="10" fill="#ED7100"/>
+    <polygon points="460,118 483,132 483,158 460,172 437,158 437,132" fill="none" stroke="white" stroke-width="1.8"/>
+    <circle cx="460" cy="145" r="5" fill="white"/>
+    <line x1="460" y1="118" x2="460" y2="128" stroke="white" stroke-width="1.6"/>
+    <line x1="483" y1="132" x2="474" y2="137" stroke="white" stroke-width="1.6"/>
+    <line x1="483" y1="158" x2="474" y2="153" stroke="white" stroke-width="1.6"/>
+    <line x1="460" y1="172" x2="460" y2="162" stroke="white" stroke-width="1.6"/>
+    <line x1="437" y1="158" x2="446" y2="153" stroke="white" stroke-width="1.6"/>
+    <line x1="437" y1="132" x2="446" y2="137" stroke="white" stroke-width="1.6"/>
+  </g>
+  <text x="460" y="196" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Amazon EKS</text>
+  <text x="460" y="209" fill="#6B7280" font-size="9"  text-anchor="middle">FastAPI + Worker pods · EC2 nodes</text>
+
+  <!-- SQS -->
+  <g filter="url(#iconShadow)">
+    <rect x="535" y="120" width="50" height="50" rx="8" fill="#DC3545"/>
+    <rect x="546" y="130" width="28" height="8" fill="white" rx="1"/>
+    <rect x="546" y="141" width="28" height="8" fill="white" rx="1"/>
+    <rect x="546" y="152" width="28" height="8" fill="white" rx="1"/>
+  </g>
+  <text x="560" y="185" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Amazon SQS</text>
+  <text x="560" y="198" fill="#6B7280" font-size="9"  text-anchor="middle">long-running job queue</text>
+
+  <!-- ============= DATA LAYER ICONS ============= -->
+
+  <!-- RDS Postgres -->
+  <g filter="url(#iconShadow)">
+    <rect x="790" y="60" width="50" height="50" rx="8" fill="#3B48CC"/>
+    <ellipse cx="815" cy="72" rx="15" ry="4" fill="none" stroke="white" stroke-width="1.8"/>
+    <path d="M 800,72 V 97 Q 800,101 815,101 Q 830,101 830,97 V 72" fill="none" stroke="white" stroke-width="1.8"/>
+    <ellipse cx="815" cy="84" rx="15" ry="3.5" fill="none" stroke="white" stroke-width="1.2"/>
+  </g>
+  <text x="880" y="80" fill="#111827" font-size="10.5" font-weight="600">RDS PostgreSQL</text>
+  <text x="880" y="93" fill="#6B7280" font-size="9">audit log · chat history</text>
+  <text x="880" y="105" fill="#6B7280" font-size="9">pgvector for RAG</text>
+
+  <!-- S3 Artifacts -->
+  <g filter="url(#iconShadow)">
+    <rect x="790" y="140" width="50" height="50" rx="8" fill="#569A31"/>
+    <ellipse cx="815" cy="153" rx="14" ry="4" fill="none" stroke="white" stroke-width="1.8"/>
+    <path d="M 801,153 L 804,180 Q 815,183 826,180 L 829,153" fill="none" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="880" y="160" fill="#111827" font-size="10.5" font-weight="600">S3 Artifacts</text>
+  <text x="880" y="173" fill="#6B7280" font-size="9">reports · uploads · exports</text>
+  <text x="880" y="185" fill="#6B7280" font-size="9">Intelligent-Tiering</text>
+
+  <!-- ElastiCache Redis -->
+  <g filter="url(#iconShadow)">
+    <rect x="790" y="220" width="50" height="50" rx="8" fill="#C7256F"/>
+    <rect x="800" y="232" width="30" height="5" fill="white" rx="1"/>
+    <rect x="800" y="242" width="30" height="5" fill="white" rx="1"/>
+    <rect x="800" y="252" width="30" height="5" fill="white" rx="1"/>
+    <rect x="800" y="262" width="30" height="5" fill="white" rx="1"/>
+  </g>
+  <text x="880" y="240" fill="#111827" font-size="10.5" font-weight="600">ElastiCache Redis</text>
+  <text x="880" y="253" fill="#6B7280" font-size="9">session cache</text>
+  <text x="880" y="265" fill="#6B7280" font-size="9">live job status</text>
+
+  <!-- ============= FRONTEND ICONS ============= -->
+
+  <!-- CloudFront -->
+  <g filter="url(#iconShadow)">
+    <rect x="170" y="352" width="50" height="50" rx="8" fill="#8C4FFF"/>
+    <circle cx="195" cy="377" r="14" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="181" y1="377" x2="209" y2="377" stroke="white" stroke-width="1.4"/>
+    <path d="M 195,363 Q 203,377 195,391" fill="none" stroke="white" stroke-width="1.4"/>
+    <path d="M 195,363 Q 187,377 195,391" fill="none" stroke="white" stroke-width="1.4"/>
+  </g>
+  <text x="195" y="417" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">CloudFront</text>
+  <text x="195" y="430" fill="#6B7280" font-size="9"  text-anchor="middle">global CDN</text>
+
+  <!-- S3 Static -->
+  <g filter="url(#iconShadow)">
+    <rect x="265" y="352" width="50" height="50" rx="8" fill="#569A31"/>
+    <ellipse cx="290" cy="365" rx="14" ry="4" fill="none" stroke="white" stroke-width="1.8"/>
+    <path d="M 276,365 L 279,392 Q 290,395 301,392 L 304,365" fill="none" stroke="white" stroke-width="1.8"/>
+  </g>
+  <text x="290" y="417" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">S3 Static</text>
+  <text x="290" y="430" fill="#6B7280" font-size="9"  text-anchor="middle">React bundle</text>
+
+  <!-- ============= IDENTITY ZONE ============= -->
+
+  <!-- Okta -->
+  <g filter="url(#iconShadow)">
+    <rect x="420" y="352" width="50" height="50" rx="8" fill="#007DC1"/>
+    <rect x="430" y="365" width="30" height="24" fill="none" stroke="white" stroke-width="1.6" rx="2"/>
+    <circle cx="438" cy="373" r="3" fill="none" stroke="white" stroke-width="1.4"/>
+    <path d="M 433,384 Q 438,380 443,384" fill="none" stroke="white" stroke-width="1.4"/>
+    <line x1="447" y1="373" x2="456" y2="373" stroke="white" stroke-width="1.3"/>
+    <line x1="447" y1="378" x2="456" y2="378" stroke="white" stroke-width="1.3"/>
+    <line x1="447" y1="383" x2="456" y2="383" stroke="white" stroke-width="1.3"/>
+  </g>
+  <text x="445" y="417" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Okta</text>
+  <text x="445" y="430" fill="#6B7280" font-size="9"  text-anchor="middle">OIDC · Azure AD groups</text>
+
+  <!-- ============= MONITORING & SECURITY ICONS ============= -->
+
+  <!-- CloudWatch -->
+  <g filter="url(#iconShadow)">
+    <rect x="595" y="352" width="50" height="50" rx="8" fill="#BF0816"/>
+    <circle cx="616" cy="372" r="9" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="623" y1="379" x2="632" y2="388" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+  <text x="620" y="417" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">CloudWatch</text>
+  <text x="620" y="430" fill="#6B7280" font-size="9"  text-anchor="middle">logs · metrics · alarms</text>
+
+<!-- Secrets Manager -->
+  <g filter="url(#iconShadow)">
+    <rect x="865" y="352" width="50" height="50" rx="8" fill="#991B1B"/>
+    <path d="M 882,370 V 364 Q 882,358 890,358 Q 898,358 898,364 V 370" fill="none" stroke="white" stroke-width="1.8"/>
+    <rect x="879" y="370" width="22" height="18" rx="2" fill="white"/>
+    <circle cx="890" cy="378" r="2.5" fill="#991B1B"/>
+    <line x1="890" y1="380" x2="890" y2="385" stroke="#991B1B" stroke-width="1.6"/>
+  </g>
+  <text x="890" y="417" fill="#111827" font-size="10.5" font-weight="600" text-anchor="middle">Secrets Manager</text>
+  <text x="890" y="430" fill="#6B7280" font-size="9"  text-anchor="middle">MSTR · DB · Okta creds</text>
+
+  <!-- ============= EXTERNAL BAND ICONS ============= -->
+
+  <!-- Amazon Bedrock (LLM, AWS-managed) -->
+  <g filter="url(#iconShadow)">
+    <rect x="170" y="500" width="38" height="38" rx="6" fill="#6B2FB3"/>
+    <rect x="178" y="508" width="22" height="4" fill="white" rx="1"/>
+    <rect x="180" y="515" width="18" height="4" fill="white" rx="1"/>
+    <rect x="182" y="522" width="14" height="4" fill="white" rx="1"/>
+    <rect x="184" y="529" width="10" height="4" fill="white" rx="1"/>
+  </g>
+  <text x="216" y="516" fill="#111827" font-size="11" font-weight="600">Amazon Bedrock</text>
+  <text x="216" y="530" fill="#6B7280" font-size="9">Managed LLM · intent parsing · embeddings for RAG</text>
+
+  <!-- PrivateLink icon + MSTR -->
+  <g filter="url(#iconShadow)">
+    <rect x="560" y="500" width="38" height="38" rx="6" fill="#8C4FFF"/>
+    <path d="M 569,519 Q 572,513 579,519 Q 586,525 589,519" fill="none" stroke="white" stroke-width="1.8"/>
+    <line x1="571" y1="519" x2="587" y2="519" stroke="white" stroke-width="1.8" stroke-dasharray="2,2"/>
+  </g>
+  <text x="605" y="516" fill="#111827" font-size="11" font-weight="600">PrivateLink → MSTR (Vendor Network)</text>
+  <text x="605" y="530" fill="#6B7280" font-size="9">MicroStrategy REST · admin service account · audited in RDS</text>
+
+  <!-- ============= ARROWS ============= -->
+
+  <!-- 1. User -> WAF -->
+  <path d="M 82,145 H 153" stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="112" y="138" fill="#4B5563" font-size="9" font-style="italic">HTTPS + JWT</text>
+
+  <!-- 2. WAF -> APIGW -->
+  <path d="M 205,145 H 243" stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="213" y="138" fill="#4B5563" font-size="9" font-style="italic">filters</text>
+
+  <!-- 3. APIGW -> ALB -->
+  <path d="M 295,145 H 333" stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="302" y="138" fill="#4B5563" font-size="9" font-style="italic">forwards</text>
+
+  <!-- 4. ALB -> EKS -->
+  <path d="M 385,145 H 423" stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="390" y="138" fill="#4B5563" font-size="9" font-style="italic">routes</text>
+
+  <!-- 5. EKS -> SQS -->
+  <path d="M 495,145 H 533" stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="500" y="138" fill="#4B5563" font-size="9" font-style="italic">enqueue</text>
+
+  <!-- 6. EKS -> RDS (right, up, right) -->
+  <path d="M 495,130 H 724 Q 730,130 730,124 V 91 Q 730,85 736,85 H 788"
+        stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="610" y="110" fill="#4B5563" font-size="9" font-style="italic">audit + queries</text>
+
+  <!-- 7. EKS -> S3 Artifacts (right, straight-ish) -->
+  <path d="M 495,160 H 788" stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="610" y="155" fill="#4B5563" font-size="9" font-style="italic">artifacts</text>
+
+  <!-- 8. EKS -> Redis (right, down, right) -->
+  <path d="M 495,175 H 724 Q 730,175 730,181 V 239 Q 730,245 736,245 H 788"
+        stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="610" y="213" fill="#4B5563" font-size="9" font-style="italic">cache + status</text>
+
+  <!-- 9. User -> CloudFront (down then right) -->
+  <path d="M 65,210 V 299 Q 65,305 71,305 H 189 Q 195,305 195,311 V 347"
+        stroke="#4B5563" stroke-width="1.2" fill="none" stroke-dasharray="4,3" marker-end="url(#arrHead)"/>
+  <text x="92" y="302" fill="#4B5563" font-size="9" font-style="italic">browses</text>
+
+  <!-- 10. APIGW -> Okta (dashed, down then right) -->
+  <path d="M 270,170 V 299 Q 270,305 276,305 H 439 Q 445,305 445,311 V 347"
+        stroke="#4B5563" stroke-width="1.2" fill="none" stroke-dasharray="3,3" marker-end="url(#arrHead)"/>
+  <text x="340" y="302" fill="#4B5563" font-size="9" font-style="italic">validates JWT</text>
+
+  <!-- 11. EKS -> CloudWatch (down through corridor) -->
+  <path d="M 490,180 V 314 Q 490,320 496,320 H 614 Q 620,320 620,326 V 347"
+        stroke="#4B5563" stroke-width="1.2" fill="none" marker-end="url(#arrHead)"/>
+  <text x="500" y="315" fill="#4B5563" font-size="9" font-style="italic">logs + metrics</text>
+
+  <!-- 12. EKS -> Secrets Manager (dashed) -->
+  <path d="M 470,180 V 299 Q 470,305 476,305 H 884 Q 890,305 890,311 V 347"
+        stroke="#4B5563" stroke-width="1.2" fill="none" stroke-dasharray="3,3" marker-end="url(#arrHead)"/>
+  <text x="780" y="302" fill="#4B5563" font-size="9" font-style="italic">reads secrets</text>
+
+  <!-- 13. EKS -> Amazon Bedrock (AWS-internal, gray) -->
+  <path d="M 450,180 V 294 Q 450,300 444,300 H 540 Q 534,300 534,306 V 469 Q 534,475 528,475 H 195 Q 189,475 189,481 V 498"
+        stroke="#4B5563" stroke-width="1.3" fill="none" marker-end="url(#arrHead)"/>
+  <text x="230" y="472" fill="#4B5563" font-size="9" font-style="italic">LLM intent + embeddings</text>
+
+  <!-- 14. EKS -> MSTR via PrivateLink (RED) -->
+  <path d="M 470,180 V 288 Q 470,294 476,294 H 539 Q 545,294 545,300 V 489 Q 545,495 551,495 H 573"
+        stroke="#DC2626" stroke-width="1.8" fill="none" marker-end="url(#arrHeadRed)"/>
+  <text x="402" y="475" fill="#DC2626" font-size="9" font-weight="700" font-style="italic">MSTR REST · PrivateLink</text>
+
+  <!-- ============= LEGEND ============= -->
+  <g transform="translate(30, 568)">
+    <text x="0" y="0" fill="#6B7280" font-size="9" font-weight="700" letter-spacing="1">LEGEND:</text>
+    <line x1="54" y1="-3" x2="78" y2="-3" stroke="#4B5563" stroke-width="1.3"/>
+    <text x="82" y="0" fill="#4B5563" font-size="9.5">AWS-internal</text>
+    <line x1="172" y1="-3" x2="196" y2="-3" stroke="#DC2626" stroke-width="1.8"/>
+    <text x="200" y="0" fill="#4B5563" font-size="9.5">External (gated)</text>
+    <line x1="322" y1="-3" x2="346" y2="-3" stroke="#4B5563" stroke-width="1.3" stroke-dasharray="3,3"/>
+    <text x="350" y="0" fill="#4B5563" font-size="9.5">Auth / secrets / page load</text>
+  </g>
+
+</svg>
+</div>
+
+<div class="footnote">
+  <b>End-to-end flow:</b> User loads React via CloudFront → logs in with Okta (JWT with Azure AD claims) → API call routed through WAF → API Gateway (validates JWT) → Internal ALB → EKS (FastAPI pods: RBAC + intent parsing via <b>Amazon Bedrock</b>, which also generates embeddings for pgvector RAG in RDS). Long-running MSTR ops (cube refresh, report exec) are enqueued on SQS → Worker pods poll MSTR via <b>AWS PrivateLink</b> into the vendor network. Status written to Redis (live) + RDS PostgreSQL (audit with real user identity). Secrets Manager holds MSTR admin service account, DB password, and Okta client secret — read at runtime via IAM Roles for Service Accounts (IRSA). Observability: CloudWatch logs + metrics + alarms.
+</div>
+
+</body>
+</html>
