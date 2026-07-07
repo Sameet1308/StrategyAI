@@ -37,3 +37,11 @@ standalone/
 # Logs
 *.log
 logs/
+
+# StrategyAI BOT backend runtime artifacts
+backend/var/
+backend/static/
+
+# Frontend
+node_modules/
+frontend/dist/
