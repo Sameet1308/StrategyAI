@@ -1,13 +1,45 @@
 # StrategyAI — MicroStrategy (Strategy) Admin Automation
 
 ## Overview
-AI-powered workflow orchestrator and REST API framework for **MicroStrategy (Strategy) Sep 2025** version.
-Currently focused on **standalone Python scripts** for daily admin tasks.
+AI-powered admin copilot and REST API framework for **MicroStrategy (Strategy One), March 2026** release.
+Two workstreams: standalone Python scripts (`scripts/`) and the **StrategyAI BOT** (`backend/` + `frontend/`) —
+a chat agent that turns natural language into confirmed MicroStrategy admin actions.
 
 ## Roadmap
-1. **Phase 1 (Current)**: Standalone Python scripts for admin daily tasks
-2. **Phase 2**: REST API framework wrapping Strategy REST API
-3. **Phase 3**: AI-powered workflow orchestrator
+1. **Phase 1 (done)**: Standalone Python scripts for admin daily tasks
+2. **Phase 2 (done)**: REST API framework wrapping Strategy REST API (`backend/app/mstr/`)
+3. **Phase 3 (current)**: AI-powered agent — v1 scope: subscriptions + cube operations
+
+## StrategyAI BOT (backend/ + frontend/)
+- **Agent loop**: intent → converse → capability check → JSON-Schema payload
+  validation → **code-enforced confirmation gate** → execute → audit.
+  Mutating tools NEVER run without an explicit user confirm (`backend/app/agent/loop.py`).
+- **LLM**: Claude on Amazon Bedrock (`anthropic[bedrock]` Mantle client,
+  `BEDROCK_MODEL_ID`, default `anthropic.claude-sonnet-5`). `STRATEGYAI_MOCK_LLM=true`
+  swaps in a deterministic mock so everything runs offline.
+- **MSTR executor**: `backend/app/mstr/executors.py` — endpoints verified against
+  mstrio-py + the Strategy REST 2026 OpenAPI spec; see `backend/MSTR_API_NOTES.md`.
+  Notable: publish/refresh cube are BOTH `POST /v2/cubes/{id}`; pause/resume is
+  `PATCH /subscriptions/{id} {"softDisabled": bool}`.
+- **Persistence**: SQLAlchemy — SQLite locally, RDS Postgres in the client account
+  (`STRATEGYAI_DATABASE_URL`). Audit log keyed to the real user.
+- **Identity**: internal ALB + Okta OIDC header (`x-amzn-oidc-data`) in prod;
+  `X-Dev-User` header / `STRATEGYAI_DEV_USER` locally.
+- **UI**: React (Vite) chat with confirmation cards, built into `backend/static/`
+  and served by FastAPI (client constraint: no CloudFront/S3 hosting).
+
+### Run the BOT locally (mock mode — no credentials needed)
+```bash
+venv\Scripts\python -m pip install -r backend\requirements.txt
+cd frontend && npm install && npm run build && cd ..
+venv\Scripts\python -m uvicorn app.main:app --app-dir backend --port 8000
+# open http://localhost:8000
+```
+
+### Test
+```bash
+venv\Scripts\python -m pytest backend\tests -q   # 45 tests, all must pass
+```
 
 ## Strategy REST API
 - Base URL pattern: `https://<server>/MicroStrategyLibrary/api`
