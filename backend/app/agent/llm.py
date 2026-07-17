@@ -109,56 +109,105 @@ class AnthropicDirectLLM:
 # Mock LLM
 # --------------------------------------------------------------------------
 
-_INTENTS = [
-    # (intent, needs project, needs subscription, needs cube)
-    ("pause_subscription", True, True, False),
-    ("resume_subscription", True, True, False),
-    ("delete_subscription", True, True, False),
-    ("trigger_subscription_now", True, True, False),
-    ("get_subscription", True, True, False),
-    ("get_subscription_status", True, True, False),
-    ("list_subscriptions", True, False, False),
-    ("publish_cube", True, False, True),
-    ("refresh_cube", True, False, True),
-    ("get_cube_status", True, False, True),
-    ("unload_cube_cache", False, False, False),
-    ("list_cube_caches", False, False, False),
-    ("list_schedules", False, False, False),
-    ("list_projects", False, False, False),
-]
-_INTENT_META = {name: (proj, sub, cube) for name, proj, sub, cube in _INTENTS}
+# Required slots per intent. The loop fills them in order and asks the user
+# whenever one can't be resolved — the ask-don't-guess contract.
+_REQUIRES = {
+    "pause_subscription": ("project", "subscription"),
+    "resume_subscription": ("project", "subscription"),
+    "delete_subscription": ("project", "subscription"),
+    "trigger_subscription_now": ("project", "subscription"),
+    "get_subscription": ("project", "subscription"),
+    "get_subscription_status": ("project", "subscription"),
+    "list_subscriptions": ("project",),
+    "publish_cube": ("project", "cube"),
+    "refresh_cube": ("project", "cube"),
+    "get_cube_status": ("project", "cube"),
+    "get_cube_definition": ("project", "cube"),
+    "run_cube": ("project", "cube"),
+    "get_object_dependencies": ("project", "object", "direction"),
+    "delete_object": ("project", "object"),
+    "unload_cube_cache": ("cache",),
+    "kill_job": ("job",),
+    "delete_schedule": ("schedule",),
+    "list_cube_caches": (),
+    "list_schedules": (),
+    "list_projects": (),
+    "list_all_subscriptions": (),
+    "get_cube_cache_usage": (),
+    "list_jobs": (),
+}
 
-_HELP = ("I can manage subscriptions (list, pause, resume, delete, send now) "
-         "and cubes (status, publish, refresh, list/unload caches) plus list "
-         "projects and schedules. What would you like to do?")
+_HELP = ("I can manage subscriptions (list, cross-project list, details, "
+         "delivery status, pause, resume, delete, send now), cubes (status, "
+         "definition, run/preview, publish, refresh, caches + cache usage), "
+         "objects (dependency/impact analysis, delete), jobs (list, cancel), "
+         "and schedules (list, delete), plus list projects. "
+         "What would you like to do?")
 
 
 def _detect_intent(text: str) -> str | None:
     t = text.lower()
     listing = any(w in t for w in ("list", "show", "what", "which", "all", "view", "display"))
     sub_word = "subscription" in t or re.search(r"\bsubs?\b", t) is not None
+    delete_word = any(w in t for w in ("delete", "remove", "drop"))
+
+    if "job" in t:
+        if any(w in t for w in ("kill", "cancel", "stop", "terminate", "abort")):
+            return "kill_job"
+        return "list_jobs"
+
     if "cache" in t:
+        if any(w in t for w in ("usage", "memory", "aggregate", "how much",
+                                "consumption", "footprint")):
+            return "get_cube_cache_usage"
         if any(w in t for w in ("unload", "purge", "clear", "evict", "remove", "delete")):
             return "unload_cube_cache"
         return "list_cube_caches"
+
+    # impact analysis — before the cube branch so "what uses cube X" is a
+    # dependency query, not a cube-status query
+    if any(p in t for p in ("depend", "dependenc", "used by", "used-by",
+                            "impact", "what uses", "who uses", "downstream",
+                            "upstream")):
+        return "get_object_dependencies"
+
+    if "schedule" in t:
+        if delete_word:
+            return "delete_schedule"
+        if listing:
+            return "list_schedules"
+
     if "cube" in t:
+        if delete_word:
+            return "delete_object"
+        if any(w in t for w in ("attribute", "metric", "column", "structure",
+                                "definition", "schema", "field", "what's in",
+                                "whats in", "what is in", "made of")):
+            return "get_cube_definition"
+        if any(w in t for w in ("run ", "execute", "preview", "sample",
+                                "data in", "rows in", "query", "show data",
+                                "show me the data", "pull the data")):
+            return "run_cube"
         if "publish" in t and "republish" not in t:
             return "publish_cube"
         if any(w in t for w in ("refresh", "republish", "reload", "update")):
             return "refresh_cube"
         if any(w in t for w in ("status", "state", "last", "when", "row", "size")) or listing:
             return "get_cube_status"
+
+    # delete a report/document/dashboard object
+    if delete_word and any(w in t for w in ("report", "document", "dashboard", "dossier")):
+        return "delete_object"
+
     # subscription delivery status — checked before "trigger" so "did it
-    # deliver?" (a question) isn't read as "deliver it" (a command). Cubes are
-    # handled above, so a delivery question here is always about a subscription.
+    # deliver?" (a question) isn't read as "deliver it" (a command).
     status_phrase = any(p in t for p in (
         "delivery status", "did it deliver", "did it go out", "did it run",
         "last run", "last delivery", "did the"))
     if status_phrase or (sub_word and any(
             w in t for w in ("failed", "failure", "why did", "status"))):
         return "get_subscription_status"
-    # subscription verbs don't require the word "subscription" — pausing and
-    # triggering only apply to subscriptions in this tool set
+
     if any(w in t for w in ("resume", "unpause", "reactivate")) or \
             ("enable" in t and "disable" not in t):
         return "resume_subscription"
@@ -167,12 +216,17 @@ def _detect_intent(text: str) -> str | None:
     if any(w in t for w in ("send now", "trigger", "run now", "deliver",
                             "execute now", "fire")):
         return "trigger_subscription_now"
-    if sub_word and any(w in t for w in ("delete", "remove", "drop")):
+    if sub_word and delete_word:
         return "delete_subscription"
     if sub_word and ("detail" in t or "definition" in t):
         return "get_subscription"
     if sub_word and listing:
+        if any(w in t for w in ("all project", "across", "every", "overall",
+                                "cross-project", "cross project", "globally",
+                                "entire", "org-wide", "company")):
+            return "list_all_subscriptions"
         return "list_subscriptions"
+
     if "schedule" in t and listing:
         return "list_schedules"
     if "project" in t and listing:
@@ -194,10 +248,10 @@ class MockLLM:
         if intent is None:
             return _text(_HELP)
 
-        needs_project, needs_sub, needs_cube = _INTENT_META[intent]
+        req = _REQUIRES[intent]
         args: dict = {}
 
-        if needs_project:
+        if "project" in req:
             project = state.resolve_project()
             if project == "ASK":
                 names = ", ".join(p["name"] for p in state.projects)
@@ -206,7 +260,7 @@ class MockLLM:
                 return state.call("list_projects", {})
             args["project_id"] = project["id"]
 
-        if needs_sub:
+        if "subscription" in req:
             sub = state.resolve_subscription(args["project_id"])
             if sub == "ASK":
                 names = ", ".join(f"“{s['name']}”" for s in state.subscriptions)
@@ -215,12 +269,12 @@ class MockLLM:
                 return state.call("list_subscriptions", {"project_id": args["project_id"]})
             args["subscription_id"] = sub["id"]
 
-        if needs_cube:
+        if "cube" in req or "object" in req:
             cube = state.resolve_cube(args["project_id"])
             if cube == "ASK":
                 names = ", ".join(f"“{c['name']}”" for c in state.search_hits)
-                return _text(f"Which cube do you mean? Matches: {names or 'none found'}. "
-                             f"Please give the exact cube name.")
+                return _text(f"Which one do you mean? Matches: {names or 'none found'}. "
+                             f"Please give the exact name.")
             if cube is None:
                 term = state.cube_search_term()
                 if not term:
@@ -228,9 +282,21 @@ class MockLLM:
                 return state.call("search_objects",
                                   {"project_id": args["project_id"], "name": term,
                                    "object_type": "cube"})
-            args["cube_id"] = cube["id"]
+            if "object" in req:
+                args["object_id"] = cube["id"]
+                args["object_type"] = "cube"
+            else:
+                args["cube_id"] = cube["id"]
 
-        if intent == "unload_cube_cache":
+        if "direction" in req:
+            direction = state.resolve_direction()
+            if direction is None:
+                return _text("Do you want what this object *uses* (its own "
+                             "dependencies), or what *uses it* (impact)? "
+                             "Say “uses” or “used by”.")
+            args["direction"] = direction
+
+        if "cache" in req:
             cache = state.resolve_cache()
             if cache == "ASK":
                 names = ", ".join(f"“{c['cube_name']}” ({c['cache_id']})"
@@ -240,7 +306,25 @@ class MockLLM:
                 return state.call("list_cube_caches", {})
             args = {"cache_id": cache["cache_id"], "node_name": cache["node"]}
 
-        if intent == "list_subscriptions":
+        if "schedule" in req:
+            sched = state.resolve_schedule()
+            if sched == "ASK":
+                names = ", ".join(f"“{s['name']}”" for s in state.schedules)
+                return _text(f"Which schedule? Available: {names}.")
+            if sched is None:
+                return state.call("list_schedules", {})
+            args["schedule_id"] = sched["id"]
+
+        if "job" in req:
+            job = state.resolve_job()
+            if job == "ASK":
+                listing = ", ".join(f"{j['job_id']} ({j['type']})" for j in state.jobs)
+                return _text(f"Which job should I cancel? Running jobs: {listing}.")
+            if job is None:
+                return state.call("list_jobs", {})
+            args["job_id"] = job["job_id"]
+
+        if intent in ("list_subscriptions", "list_all_subscriptions"):
             filter_text = state.quoted_term()
             if filter_text:
                 args["filter_text"] = filter_text
@@ -272,6 +356,8 @@ class _ConvState:
         self.projects = self._latest("list_projects") or []
         self.subscriptions = self._latest("list_subscriptions") or []
         self.caches = self._latest("list_cube_caches") or []
+        self.schedules = self._latest("list_schedules") or []
+        self.jobs = self._latest("list_jobs") or []
         # search results only bind to the current request
         self.search_hits = self._latest("search_objects") or []
 
@@ -387,14 +473,73 @@ class _ConvState:
         quoted = self.quoted_term()
         if quoted:
             return quoted
+        stop = {"the", "a", "an", "my", "our", "this", "that", "status", "of",
+                "in", "for", "what", "uses", "used", "by", "show", "me", "data",
+                "which", "is", "run", "execute", "delete", "remove", "pull",
+                "preview", "definition", "structure", "does", "depend", "on",
+                "cube", "cubes", "get", "give"}
         for text in reversed(self.user_texts):
-            m = re.search(r"(?:cube|status of)\s+([A-Za-z0-9 _-]{3,}?)(?:\s+cube)?\s*$",
-                          text.strip(), re.IGNORECASE)
+            low = text.lower()
+            # "<name> cube" — take the trailing run of non-stopwords before 'cube'
+            idx = low.rfind(" cube")
+            if idx > 0:
+                before = re.findall(r"[A-Za-z0-9_-]+", text[:idx])
+                name = []
+                for w in reversed(before):
+                    if w.lower() in stop:
+                        break
+                    name.insert(0, w)
+                cand = " ".join(name).strip()
+                if len(cand) >= 3:
+                    return cand
+            # "cube <name>"
+            m = re.search(r"\bcube\s+([A-Za-z0-9][A-Za-z0-9 _-]{2,})", text, re.IGNORECASE)
             if m:
-                term = m.group(1).strip()
-                if term.lower() not in ("the", "a", "my"):
-                    return term
+                cand = m.group(1).strip()
+                if cand.lower() not in stop and len(cand) >= 3:
+                    return cand
         return None
+
+    def resolve_direction(self) -> str | None:
+        t = self._all_text()
+        used_by = any(p in t for p in (
+            "used by", "used-by", "what uses", "who uses", "impact",
+            "affected", "depends on it", "depend on it", "downstream",
+            "break if", "consumers"))
+        uses = any(p in t for p in (
+            "what it uses", "its dependencies", "dependencies of",
+            "what does it use", "upstream", "built on", "based on",
+            "what it depends on"))
+        if used_by and not uses:
+            return "used_by"
+        if uses and not used_by:
+            return "uses"
+        if "dependenc" in t and not used_by:
+            return "uses"      # "show dependencies of X" = what X uses
+        return None
+
+    def resolve_schedule(self):
+        if not self.schedules:
+            return None
+        blob = self._all_text()
+        quoted = self.quoted_term()
+        if quoted:
+            hits = [s for s in self.schedules if quoted.lower() in s["name"].lower()]
+        else:
+            hits = [s for s in self.schedules if s["name"].lower() in blob]
+        if len(hits) == 1:
+            return hits[0]
+        return "ASK"
+
+    def resolve_job(self):
+        blob = self._all_text()
+        nums = re.findall(r"\bjob\s*#?\s*(\d{2,})", blob) or \
+            re.findall(r"\b(\d{3,})\b", blob)
+        if nums:
+            return {"job_id": int(nums[-1])}
+        if not self.jobs:
+            return None
+        return "ASK"
 
     def resolve_cube(self, project_id: str):
         blob = self._all_text()
@@ -460,6 +605,37 @@ class _ConvState:
             return f"There are {len(data)} schedules defined — see the table below."
         if intent == "list_cube_caches":
             return f"{len(data)} cube caches are loaded — see the table below."
+        if intent == "list_all_subscriptions":
+            return (f"Across all projects there are {len(data)} subscriptions — "
+                    f"see the table below.")
+        if intent == "get_cube_cache_usage":
+            total = round(sum(r.get("size_mb", 0) for r in data), 1)
+            return (f"Total cube-cache memory is {total} MB across {len(data)} "
+                    f"groups — see the table below.")
+        if intent == "list_jobs":
+            return (f"{len(data)} jobs are currently on the Intelligence Server — "
+                    f"see the table below.")
+        if intent == "get_cube_definition":
+            return (f"Cube “{data.get('name')}” has "
+                    f"{len(data.get('attributes', []))} attributes and "
+                    f"{len(data.get('metrics', []))} metrics — see below.")
+        if intent == "run_cube":
+            rows = data.get("row_count") or 0
+            return (f"Cube “{data.get('name')}” ran: {rows:,} rows across "
+                    f"{len(data.get('columns', []))} columns — preview below.")
+        if intent == "get_object_dependencies":
+            deps = data.get("dependents", [])
+            verb = "is used by" if data.get("direction") == "used_by" else "uses"
+            obj = data.get("object_name") or "That object"
+            return f"“{obj}” {verb} {len(deps)} object(s) — see the table below."
+        if intent == "kill_job":
+            return f"Done — job {data.get('job_id')} was cancelled."
+        if intent == "delete_object":
+            return (f"Done — {data.get('name', data.get('object_id'))} "
+                    f"was permanently deleted.")
+        if intent == "delete_schedule":
+            return (f"Done — schedule "
+                    f"{data.get('name', data.get('schedule_id'))} was deleted.")
         if intent == "get_subscription":
             return (f"Subscription “{data.get('name')}” is "
                     f"{'enabled' if data.get('enabled') else 'paused'}, owned by "
