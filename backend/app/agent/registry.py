@@ -254,6 +254,137 @@ _register(ToolSpec(
 ))
 
 
+# ============================================================ Tier A additions
+
+_OBJECT_TYPE = {"type": "string", "enum": ["cube", "report", "document"],
+                "description": "Type of the object"}
+
+# ---- reads ----
+
+_register(ToolSpec(
+    name="get_cube_definition",
+    description=("List an intelligent cube's structure — its attributes and "
+                 "metrics — without running it. Resolve the cube ID first with "
+                 "search_objects."),
+    input_schema=_schema({
+        "project_id": _OBJECT_ID,
+        "cube_id": _OBJECT_ID,
+    }, ["project_id", "cube_id"]),
+))
+
+_register(ToolSpec(
+    name="run_cube",
+    description=("Execute an intelligent cube and return a preview: its columns "
+                 "and row count. Non-destructive query — no confirmation needed. "
+                 "Use for 'show me the data in cube X' or 'how many rows does X "
+                 "have right now'."),
+    input_schema=_schema({
+        "project_id": _OBJECT_ID,
+        "cube_id": _OBJECT_ID,
+        "row_limit": {"type": "integer", "minimum": 1, "maximum": 50,
+                      "description": "Max rows to preview (default 10)"},
+    }, ["project_id", "cube_id"]),
+))
+
+_register(ToolSpec(
+    name="list_all_subscriptions",
+    description=("List subscriptions across ALL projects at once. Use for "
+                 "cross-project questions like 'how many subscriptions do we "
+                 "have overall' or 'find every subscription named X'."),
+    input_schema=_schema({
+        "filter_text": {"type": "string",
+                        "description": "Optional case-insensitive name filter"},
+    }, []),
+))
+
+_register(ToolSpec(
+    name="get_cube_cache_usage",
+    description=("Aggregated intelligent-cube cache memory usage on the "
+                 "Intelligence Server, grouped by project or by owner."),
+    input_schema=_schema({
+        "group_by": {"type": "string", "enum": ["project", "user"],
+                     "description": "Grouping dimension (default project)"},
+    }, []),
+))
+
+_register(ToolSpec(
+    name="list_jobs",
+    description=("List currently executing jobs on the Intelligence Server "
+                 "(report/cube/subscription executions), optionally scoped to "
+                 "one project. Read-only."),
+    input_schema=_schema({
+        "project_id": {**_OBJECT_ID,
+                       "description": "Optional project filter (32-char hex ID)"},
+    }, []),
+))
+
+_register(ToolSpec(
+    name="get_object_dependencies",
+    description=("Impact analysis: find what an object depends on ('uses') or "
+                 "what depends on it ('used_by'). Resolve the object ID first "
+                 "with search_objects. Read-only — run before changing or "
+                 "deleting an object."),
+    input_schema=_schema({
+        "project_id": _OBJECT_ID,
+        "object_id": _OBJECT_ID,
+        "object_type": _OBJECT_TYPE,
+        "direction": {"type": "string", "enum": ["uses", "used_by"],
+                      "description": "'uses' = the object's own dependencies; "
+                                     "'used_by' = objects that depend on it"},
+    }, ["project_id", "object_id", "direction"]),
+))
+
+# ---- mutating (confirmation gate) ----
+
+_register(ToolSpec(
+    name="kill_job",
+    description=("Cancel a running Intelligence Server job by its numeric job "
+                 "ID (from list_jobs). Requires user confirmation."),
+    input_schema=_schema({
+        "job_id": {"type": "integer", "minimum": 1,
+                   "description": "Numeric job ID from list_jobs"},
+    }, ["job_id"]),
+    mutating=True,
+    preview=lambda a, n: (
+        f"Cancel running job {a.get('job_id')}"
+        + (f" — {n['job_desc']}" if n.get("job_desc") else "")
+        + ". Its in-progress execution stops immediately."),
+))
+
+_register(ToolSpec(
+    name="delete_object",
+    description=("Permanently delete a metadata object (cube, report, or "
+                 "document) by ID. Irreversible. Resolve the ID with "
+                 "search_objects first. Requires user confirmation."),
+    input_schema=_schema({
+        "project_id": _OBJECT_ID,
+        "object_id": _OBJECT_ID,
+        "object_type": _OBJECT_TYPE,
+    }, ["project_id", "object_id", "object_type"]),
+    mutating=True,
+    preview=lambda a, n: (
+        f"PERMANENTLY DELETE {a.get('object_type', 'object')} "
+        f"“{n.get('object_name', a.get('object_id'))}”. This cannot be undone; "
+        f"anything that uses it will break."),
+))
+
+_register(ToolSpec(
+    name="delete_schedule",
+    description=("Delete a schedule by its ID. Subscriptions using it lose "
+                 "their trigger. Resolve the ID with list_schedules first. "
+                 "Requires user confirmation."),
+    input_schema=_schema({
+        "schedule_id": {"type": "string", "minLength": 1,
+                        "description": "Schedule ID from list_schedules"},
+    }, ["schedule_id"]),
+    mutating=True,
+    preview=lambda a, n: (
+        f"Delete schedule “{n.get('schedule_name', a.get('schedule_id'))}”. "
+        f"Subscriptions on this schedule stop running until moved to another "
+        f"schedule."),
+))
+
+
 def anthropic_tools() -> list[dict]:
     """Registry in Anthropic Messages API tool format."""
     return [

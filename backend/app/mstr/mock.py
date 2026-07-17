@@ -86,6 +86,51 @@ class MockMstrExecutor:
         ]
         self.refresh_jobs: dict[str, int] = {}   # instance_id -> polls until done
         self.deliveries: list[dict] = []
+        self.jobs = [
+            {"job_id": 4821, "type": "Cube Publish", "object": "Finance Master Cube",
+             "user": "svc-mstr-admin", "project_id": P_FIN,
+             "project": "Finance Analytics", "status": "executing", "pct": 62},
+            {"job_id": 4822, "type": "Report Execution", "object": "Pipeline Detail",
+             "user": "r.patel", "project_id": P_SALES,
+             "project": "Sales Operations", "status": "executing", "pct": 30},
+            {"job_id": 4823, "type": "Subscription", "object": "Daily Sales Email",
+             "user": "svc-mstr-admin", "project_id": P_FIN,
+             "project": "Finance Analytics", "status": "waiting", "pct": 0},
+        ]
+        # object_id -> {"uses": [...], "used_by": [...]}
+        self.dependencies = {
+            "C111111111111111111111111111C111": {   # Finance Master Cube
+                "uses": [{"name": "Finance Warehouse", "type": "database instance"},
+                         {"name": "GL Account", "type": "attribute"},
+                         {"name": "Net Revenue", "type": "metric"}],
+                "used_by": [{"name": "Finance Executive Dashboard", "type": "document"},
+                            {"name": "Monthly P&L Report", "type": "report"}],
+            },
+            "C444444444444444444444444444C444": {   # Sales Pipeline Cube
+                "uses": [{"name": "CRM Warehouse", "type": "database instance"},
+                         {"name": "Opportunity Stage", "type": "attribute"}],
+                "used_by": [{"name": "Pipeline Snapshot", "type": "subscription"},
+                            {"name": "Territory Performance", "type": "report"}],
+            },
+        }
+        # per-cube structure for get_cube_definition / run_cube
+        self.cube_structure = {
+            "C111111111111111111111111111C111": {
+                "attributes": ["GL Account", "Cost Center", "Fiscal Period", "Entity"],
+                "metrics": ["Net Revenue", "Operating Expense", "EBITDA"]},
+            "C222222222222222222222222222C222": {
+                "attributes": ["Journal Entry", "GL Account", "Posting Date"],
+                "metrics": ["Debit Amount", "Credit Amount"]},
+            "C333333333333333333333333333C333": {
+                "attributes": ["Cost Center", "Fiscal Period", "Scenario"],
+                "metrics": ["Budget", "Actual", "Variance"]},
+            "C444444444444444444444444444C444": {
+                "attributes": ["Opportunity Stage", "Region", "Sales Rep", "Close Month"],
+                "metrics": ["Pipeline Value", "Weighted Value", "Win Rate"]},
+            "C555555555555555555555555555C555": {
+                "attributes": ["Customer", "Segment", "Region", "Account Manager"],
+                "metrics": ["Lifetime Value", "Open Opportunities", "Churn Risk"]},
+        }
 
     # ------------------------------------------------------------------
 
@@ -191,6 +236,67 @@ class MockMstrExecutor:
                       if c["project_id"].lower() == args["project_id"].lower()]
         return caches
 
+    def _get_cube_definition(self, args):
+        cube = self._cube(args["project_id"], args["cube_id"])
+        struct = self.cube_structure.get(cube["id"],
+                                         {"attributes": [], "metrics": []})
+        return {"id": cube["id"], "name": cube["name"],
+                "attributes": struct["attributes"], "metrics": struct["metrics"]}
+
+    def _run_cube(self, args):
+        cube = self._cube(args["project_id"], args["cube_id"])
+        struct = self.cube_structure.get(cube["id"],
+                                         {"attributes": [], "metrics": []})
+        limit = args.get("row_limit", 10)
+        columns = struct["attributes"] + struct["metrics"]
+        return {"id": cube["id"], "name": cube["name"],
+                "instance_id": f"inst-{next(self._instance_seq):06d}",
+                "row_count": cube["row_count"],
+                "columns": columns,
+                "preview_rows": min(limit, cube["row_count"])}
+
+    def _list_all_subscriptions(self, args):
+        pid_to_name = {p["id"]: p["name"] for p in self.projects}
+        subs = [{"id": s["id"], "name": s["name"],
+                 "project": pid_to_name.get(s["project_id"], ""),
+                 "owner": s["owner"], "enabled": s["enabled"]}
+                for s in self.subscriptions]
+        if args.get("filter_text"):
+            f = args["filter_text"].lower()
+            subs = [s for s in subs if f in s["name"].lower()]
+        return subs
+
+    def _get_cube_cache_usage(self, args):
+        group_by = args.get("group_by", "project")
+        buckets: dict[str, dict] = {}
+        pid_to_name = {p["id"]: p["name"] for p in self.projects}
+        for c in self.caches:
+            key = pid_to_name.get(c["project_id"], c["project_id"]) \
+                if group_by == "project" else "svc-mstr-admin"
+            b = buckets.setdefault(key, {"group": key, "size_mb": 0.0, "cache_count": 0})
+            b["size_mb"] = round(b["size_mb"] + c["size_mb"], 1)
+            b["cache_count"] += 1
+        return list(buckets.values())
+
+    def _list_jobs(self, args):
+        jobs = self.jobs
+        if args.get("project_id"):
+            jobs = [j for j in jobs
+                    if j["project_id"].lower() == args["project_id"].lower()]
+        return [{k: v for k, v in j.items() if k != "project_id"} for j in jobs]
+
+    def _get_object_dependencies(self, args):
+        graph = self.dependencies.get(args["object_id"],
+                                      {"uses": [], "used_by": []})
+        name = ""
+        for c in self.cubes:
+            if c["id"].lower() == args["object_id"].lower():
+                name = c["name"]
+                break
+        return {"object_id": args["object_id"], "object_name": name,
+                "direction": args["direction"],
+                "dependents": graph.get(args["direction"], [])}
+
     # ----- mutating tools ------------------------------------------------
 
     def _pause_subscription(self, args):
@@ -239,3 +345,30 @@ class MockMstrExecutor:
                 return {"cache_id": c["cache_id"], "cube_name": c["cube_name"],
                         "unloaded": True}
         raise MstrApiError(f"Cache {args['cache_id']} not found", status=404)
+
+    def _kill_job(self, args):
+        for j in self.jobs:
+            if j["job_id"] == args["job_id"]:
+                self.jobs.remove(j)
+                return {"job_id": j["job_id"], "object": j["object"],
+                        "cancelled": True}
+        raise MstrApiError(f"Job {args['job_id']} not found or already finished",
+                           status=404)
+
+    def _delete_object(self, args):
+        self._project(args["project_id"])
+        for c in self.cubes:
+            if (c["id"].lower() == args["object_id"].lower()
+                    and c["project_id"].lower() == args["project_id"].lower()):
+                self.cubes.remove(c)
+                self.dependencies.pop(c["id"], None)
+                return {"object_id": c["id"], "name": c["name"], "deleted": True}
+        raise MstrApiError(f"Object {args['object_id']} not found in project",
+                           status=404)
+
+    def _delete_schedule(self, args):
+        for s in self.schedules:
+            if s["id"] == args["schedule_id"]:
+                self.schedules.remove(s)
+                return {"schedule_id": s["id"], "name": s["name"], "deleted": True}
+        raise MstrApiError(f"Schedule {args['schedule_id']} not found", status=404)

@@ -237,6 +237,23 @@ class AgentLoop:
                     if c["cache_id"] == args["cache_id"]:
                         names["cache_name"] = c.get("cube_name")
                         break
+            if "object_id" in args and tool == "delete_object":
+                for o in self.executor.execute("search_objects", {
+                        "project_id": args["project_id"], "name": "",
+                        "object_type": args.get("object_type", "cube")}):
+                    if o["id"].lower() == args["object_id"].lower():
+                        names["object_name"] = o.get("name")
+                        break
+            if "job_id" in args:
+                for j in self.executor.execute("list_jobs", {}):
+                    if j.get("job_id") == args["job_id"]:
+                        names["job_desc"] = f"{j.get('type', '')} — {j.get('object', '')}"
+                        break
+            if "schedule_id" in args:
+                for s in self.executor.execute("list_schedules", {}):
+                    if s["id"] == args["schedule_id"]:
+                        names["schedule_name"] = s.get("name")
+                        break
         except Exception:
             pass  # previews fall back to raw IDs
         return names

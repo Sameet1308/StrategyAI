@@ -153,6 +153,113 @@ class RealMstrExecutor:
                 })
         return caches
 
+    def _get_cube_definition(self, args):
+        data = self.client.get_json(f"/v2/cubes/{args['cube_id']}",
+                                    project_id=args["project_id"])
+        defn = data.get("definition", {}) or {}
+        available = defn.get("availableObjects", defn)
+        attrs = [a.get("name") for a in available.get("attributes", []) or []]
+        metrics = [m.get("name") for m in available.get("metrics", []) or []]
+        return {"id": args["cube_id"], "name": data.get("name", ""),
+                "attributes": [a for a in attrs if a],
+                "metrics": [m for m in metrics if m]}
+
+    def _run_cube(self, args):
+        limit = args.get("row_limit", 10)
+        resp = self.client.request(
+            "POST", f"/v2/cubes/{args['cube_id']}/instances",
+            project_id=args["project_id"],
+            params={"offset": 0, "limit": limit}, json_body={}, ok=(200, 201))
+        body = resp.json() if resp.content else {}
+        grid = (body.get("definition", {}) or {}).get("grid", {}) or {}
+        columns = [r.get("name") for r in grid.get("rows", []) or [] if r.get("name")]
+        for hdr in grid.get("columns", []) or []:
+            columns += [e.get("name") for e in hdr.get("elements", []) or []
+                        if e.get("name")]
+        total = (((body.get("data", {}) or {}).get("paging", {}) or {})
+                 .get("total"))
+        return {"id": args["cube_id"], "instance_id": body.get("instanceId"),
+                "row_count": total, "columns": columns[:25]}
+
+    def _list_all_subscriptions(self, args):
+        project_ids = [p["id"] for p in self._list_projects({})]
+        resp = self.client.request("POST", "/subscriptions/query",
+                                   json_body={"projectIds": project_ids},
+                                   ok=(200,))
+        body = resp.json() if resp.content else {}
+        name_by_id = {p["id"]: p["name"] for p in self._list_projects({})}
+        subs = []
+        for s in body.get("subscriptions", []) or []:
+            pid = s.get("projectId", "")
+            subs.append({"id": s.get("id"), "name": s.get("name", ""),
+                         "project": name_by_id.get(pid, pid),
+                         "owner": (s.get("owner", {}) or {}).get("name", ""),
+                         "enabled": not (s.get("delivery", {}) or {})
+                         .get("softDisabled", False)})
+        if args.get("filter_text"):
+            f = args["filter_text"].lower()
+            subs = [s for s in subs if f in (s["name"] or "").lower()]
+        return subs
+
+    def _get_cube_cache_usage(self, args):
+        group_by = args.get("group_by", "project")
+        out = []
+        for node in self._nodes():
+            data = self.client.get_json(
+                "/monitors/caches/cubes/aggregatedUsages",
+                params={"clusterNode": node, "groupByObject": group_by})
+            for u in (data.get("aggregatedUsages")
+                      or data.get("usages") or data.get("usage") or []):
+                out.append({
+                    "group": u.get("name") or u.get("groupName", ""),
+                    "size_mb": round(int(u.get("size", 0) or 0) / (1024 * 1024), 1),
+                    "cache_count": u.get("count", u.get("cacheCount", 0)),
+                })
+        return out
+
+    def _list_jobs(self, args):
+        jobs = []
+        for node in self._nodes():
+            data = self.client.get_json("/monitors/jobs",
+                                        params={"clusterNode": node})
+            for j in data.get("jobs", []) or []:
+                if (args.get("project_id") and (j.get("projectId", "") or "").lower()
+                        != args["project_id"].lower()):
+                    continue
+                jobs.append({
+                    "job_id": j.get("id") or j.get("jobId"),
+                    "type": j.get("jobType") or j.get("type", ""),
+                    "status": j.get("status", ""),
+                    "user": j.get("userFullName") or j.get("user", ""),
+                    "object": j.get("objectName", ""),
+                    "project": j.get("projectName", ""),
+                })
+        return jobs
+
+    def _get_object_dependencies(self, args):
+        # MSTR dependency-search param naming is inverted vs. plain English:
+        #   usedByObject  -> objects the target USES  (its own dependencies)
+        #   usesObject    -> objects that USE the target (things depending on it)
+        # Verify against the client's server if the two directions look swapped.
+        type_code = {"cube": 3, "report": 3, "document": 55}.get(
+            args.get("object_type", "cube"), 3)
+        ref = f"{args['object_id']};{type_code}"
+        param = "usedByObject" if args["direction"] == "uses" else "usesObject"
+        created = self.client.request(
+            "POST", "/v2/metadataSearches/results",
+            project_id=args["project_id"], params={param: ref},
+            ok=(200, 201)).json()
+        search_id = created.get("id")
+        results = self.client.get_json(
+            "/metadataSearches/results", project_id=args["project_id"],
+            params={"searchId": search_id, "limit": 100})
+        items = results if isinstance(results, list) \
+            else results.get("result") or results.get("objects") or []
+        return {"object_id": args["object_id"], "direction": args["direction"],
+                "dependents": [{"name": o.get("name"),
+                                "type": o.get("type"),
+                                "subtype": o.get("subtype")} for o in items]}
+
     # ----- mutating tools ------------------------------------------------
 
     def _pause_subscription(self, args):
@@ -208,6 +315,25 @@ class RealMstrExecutor:
             json_body={"state": {"loadedState": "unloaded"}},
             ok=(200, 202))
         return {"cache_id": args["cache_id"], "unloaded": True}
+
+    def _kill_job(self, args):
+        self.client.request("DELETE", f"/monitors/jobs/{args['job_id']}",
+                            ok=(200, 204))
+        return {"job_id": args["job_id"], "cancelled": True}
+
+    def _delete_object(self, args):
+        type_code = {"cube": 3, "report": 3, "document": 55}.get(
+            args.get("object_type", "cube"), 3)
+        self.client.request("DELETE", f"/objects/{args['object_id']}",
+                            project_id=args["project_id"],
+                            params={"type": type_code}, ok=(200, 204))
+        return {"object_id": args["object_id"],
+                "object_type": args.get("object_type"), "deleted": True}
+
+    def _delete_schedule(self, args):
+        self.client.request("DELETE", f"/schedules/{args['schedule_id']}",
+                            ok=(200, 204))
+        return {"schedule_id": args["schedule_id"], "deleted": True}
 
     # ----- helpers --------------------------------------------------------
 
