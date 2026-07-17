@@ -38,8 +38,23 @@ venv\Scripts\python -m uvicorn app.main:app --app-dir backend --port 8000
 
 ### Test
 ```bash
-venv\Scripts\python -m pytest backend\tests -q   # 45 tests, all must pass
+venv\Scripts\python -m pytest backend\tests -q   # 74 tests, all must pass
 ```
+
+### Go live against a real MicroStrategy server
+1. In `.env`: `STRATEGYAI_MOCK_MSTR=false`, set `MSTR_BASE_URL` (must end in
+   `/MicroStrategyLibrary/api`), `MSTR_USERNAME`, `MSTR_PASSWORD`, and choose an
+   LLM provider (`STRATEGYAI_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` is the
+   easiest local live path; `bedrock` in the AWS deployment).
+2. **Validate the live API calls before running the app** (read-only, safe on
+   prod — never calls a mutating endpoint):
+   ```bash
+   venv\Scripts\python backend\validate_live.py
+   ```
+   It logs in and exercises every read endpoint, printing PASS/FAIL per call
+   with the real MSTR error on failure. Endpoint shapes are verified against
+   `backend/MSTR_API_NOTES.md`; this proves them against *your* server.
+3. Start the app: `venv\Scripts\python -m uvicorn app.main:app --app-dir backend --port 8000`
 
 ## Strategy REST API
 - Base URL pattern: `https://<server>/MicroStrategyLibrary/api`
