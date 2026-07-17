@@ -276,3 +276,106 @@ def test_delete_subscription_flow(agent, db_session, executor):
     done = agent.handle_confirm(db_session, USER, reply.pending_action.id, True)
     assert done.kind == "result"
     assert len(executor.subscriptions) == count_before - 1
+
+
+# --------------------------------------------------------------- Tier A reads
+
+def test_cube_definition(agent, db_session):
+    reply = agent.handle_chat(
+        db_session, USER, None,
+        'What are the attributes and metrics of the "Finance Master Cube" in Finance Analytics?')
+    assert reply.kind == "text"
+    assert reply.pending_action is None
+    assert "4 attributes and 3 metrics" in reply.reply
+    defn = next(r["data"] for r in reply.results if r["tool"] == "get_cube_definition")
+    assert "GL Account" in defn["attributes"]
+
+
+def test_run_cube_preview(agent, db_session):
+    reply = agent.handle_chat(
+        db_session, USER, None,
+        'Run the "Customer 360 Cube" in Sales Operations and show me the data')
+    assert reply.kind == "text"
+    assert "ran" in reply.reply and "rows" in reply.reply
+    data = next(r["data"] for r in reply.results if r["tool"] == "run_cube")
+    assert data["row_count"] == 27_300_000
+    assert data["columns"]
+
+
+def test_list_all_subscriptions_cross_project(agent, db_session):
+    reply = agent.handle_chat(db_session, USER, None,
+                              "How many subscriptions do we have across all projects?")
+    assert reply.kind == "text"
+    assert "8 subscriptions" in reply.reply
+    data = next(r["data"] for r in reply.results if r["tool"] == "list_all_subscriptions")
+    assert len(data) == 8
+    assert {"Finance Analytics", "Sales Operations"} == {s["project"] for s in data}
+
+
+def test_cube_cache_usage(agent, db_session):
+    reply = agent.handle_chat(db_session, USER, None,
+                              "Show me total cube cache memory usage")
+    assert reply.kind == "text"
+    assert "cube-cache memory" in reply.reply
+
+
+def test_list_jobs(agent, db_session):
+    reply = agent.handle_chat(db_session, USER, None, "What jobs are running?")
+    assert reply.kind == "text"
+    assert "jobs are currently" in reply.reply
+    data = next(r["data"] for r in reply.results if r["tool"] == "list_jobs")
+    assert len(data) == 3
+
+
+def test_object_dependencies_used_by(agent, db_session):
+    reply = agent.handle_chat(
+        db_session, USER, None,
+        'What uses the "Finance Master Cube" in Finance Analytics?')
+    assert reply.kind == "text"
+    assert "is used by" in reply.reply
+    data = next(r["data"] for r in reply.results
+                if r["tool"] == "get_object_dependencies")
+    assert data["direction"] == "used_by"
+    assert any(d["name"] == "Monthly P&L Report" for d in data["dependents"])
+
+
+# ------------------------------------------------------------ Tier A mutating
+
+def test_kill_job_gated(agent, db_session, executor):
+    assert any(j["job_id"] == 4822 for j in executor.jobs)
+    reply = agent.handle_chat(db_session, USER, None, "Cancel job 4822")
+    assert reply.kind == "confirm"
+    assert reply.pending_action.tool_name == "kill_job"
+    assert any(j["job_id"] == 4822 for j in executor.jobs)   # gate holds
+
+    done = agent.handle_confirm(db_session, USER, reply.pending_action.id, True)
+    assert done.kind == "result"
+    assert not any(j["job_id"] == 4822 for j in executor.jobs)
+
+
+def test_delete_object_gated(agent, db_session, executor):
+    n_before = len(executor.cubes)
+    reply = agent.handle_chat(
+        db_session, USER, None,
+        'Delete the "Sales Pipeline Cube" in Sales Operations')
+    assert reply.kind == "confirm"
+    assert reply.pending_action.tool_name == "delete_object"
+    assert "PERMANENTLY DELETE" in reply.pending_action.preview
+    assert len(executor.cubes) == n_before                   # gate holds
+
+    done = agent.handle_confirm(db_session, USER, reply.pending_action.id, True)
+    assert done.kind == "result"
+    assert len(executor.cubes) == n_before - 1
+
+
+def test_delete_schedule_gated(agent, db_session, executor):
+    n_before = len(executor.schedules)
+    reply = agent.handle_chat(db_session, USER, None,
+                              'Delete the "Monday 7:00 AM" schedule')
+    assert reply.kind == "confirm"
+    assert reply.pending_action.tool_name == "delete_schedule"
+    assert len(executor.schedules) == n_before               # gate holds
+
+    done = agent.handle_confirm(db_session, USER, reply.pending_action.id, True)
+    assert done.kind == "result"
+    assert len(executor.schedules) == n_before - 1

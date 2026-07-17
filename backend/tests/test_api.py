@@ -14,11 +14,12 @@ def test_tools_endpoint(client):
     res = client.get("/api/tools")
     assert res.status_code == 200
     tools = res.json()
-    assert len(tools) == 16
+    assert len(tools) == 25
     mutating = {t["name"] for t in tools if t["mutating"]}
     assert mutating == {"pause_subscription", "resume_subscription",
                         "delete_subscription", "trigger_subscription_now",
-                        "publish_cube", "refresh_cube", "unload_cube_cache"}
+                        "publish_cube", "refresh_cube", "unload_cube_cache",
+                        "kill_job", "delete_object", "delete_schedule"}
 
 
 def test_chat_and_confirm_end_to_end(client):

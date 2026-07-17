@@ -1,5 +1,38 @@
 # Changelog
 
+## Session 3 — 2026-07-17
+
+### Tier A capability expansion — 9 new tools (registry now 25)
+Extended the BOT beyond the subscriptions+cubes core, keeping intent detection,
+schema validation, and the confirmation gate intact.
+
+**New reads (auto-execute):**
+- `get_cube_definition` — a cube's attributes & metrics (`GET /v2/cubes/{id}`).
+- `run_cube` — execute a cube and preview columns + row count
+  (`POST /v2/cubes/{id}/instances`).
+- `list_all_subscriptions` — cross-project subscription view
+  (`POST /subscriptions/query`).
+- `get_cube_cache_usage` — aggregated cache memory by project/owner
+  (`GET /monitors/caches/cubes/aggregatedUsages`).
+- `list_jobs` — running Intelligence Server jobs (`GET /monitors/jobs`).
+- `get_object_dependencies` — uses / used-by impact analysis
+  (`POST` + `GET /metadataSearches/results`).
+
+**New mutating (confirmation-gated):**
+- `kill_job` — cancel a running job (`DELETE /monitors/jobs/{id}`).
+- `delete_object` — delete a cube/report/document (`DELETE /objects/{id}?type=`).
+- `delete_schedule` — delete a schedule (`DELETE /schedules/{id}`).
+
+Mock executor seeded with jobs, a dependency graph, and per-cube structure;
+mock LLM extended with the new intents and slot-filling (job/schedule/direction
+resolution) preserving ask-when-missing. Tests: **74 passing** (was 56).
+Live-verified in the browser: dependency analysis, job listing, cube
+definition, cross-project subscriptions, and a gated object delete.
+
+Deferred (agreed): create/edit subscription (own session), create/update
+schedule (complex recurrence payload — risky to ship untested), and Tier B
+domains (users, security, reports/dossiers, project admin).
+
 ## Session 2 — 2026-07-07
 
 ### StrategyAI BOT — full end-to-end build (Phase 3 v1)

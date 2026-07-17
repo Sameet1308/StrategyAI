@@ -213,3 +213,117 @@ def test_missing_cube_raises_not_found():
     with pytest.raises(MstrApiError) as err:
         ex.execute("get_cube_status", {"project_id": PROJ, "cube_id": CUBE})
     assert err.value.status == 404
+
+
+# ------------------------------------------------------------ Tier A wire tests
+
+def test_cube_definition_uses_v2():
+    ex = _executor({
+        f"GET /v2/cubes/{CUBE}": {"name": "Finance Master Cube", "definition": {
+            "availableObjects": {
+                "attributes": [{"name": "GL Account"}, {"name": "Entity"}],
+                "metrics": [{"name": "Net Revenue"}]}}},
+    })
+    out = ex.execute("get_cube_definition", {"project_id": PROJ, "cube_id": CUBE})
+    assert ex.client.calls[0]["path"] == f"/v2/cubes/{CUBE}"
+    assert out["attributes"] == ["GL Account", "Entity"]
+    assert out["metrics"] == ["Net Revenue"]
+
+
+def test_run_cube_posts_instance():
+    ex = _executor({
+        f"POST /v2/cubes/{CUBE}/instances": {
+            "instanceId": "IX9", "data": {"paging": {"total": 27300000}},
+            "definition": {"grid": {"rows": [{"name": "Customer"}],
+                                    "columns": [{"elements": [{"name": "LTV"}]}]}}},
+    })
+    out = ex.execute("run_cube", {"project_id": PROJ, "cube_id": CUBE, "row_limit": 5})
+    call = ex.client.calls[-1]
+    assert call["method"] == "POST" and call["path"] == f"/v2/cubes/{CUBE}/instances"
+    assert call["params"] == {"offset": 0, "limit": 5}
+    assert out["instance_id"] == "IX9"
+    assert out["row_count"] == 27300000
+    assert out["columns"] == ["Customer", "LTV"]
+
+
+def test_list_all_subscriptions_posts_query():
+    ex = _executor({
+        "GET /projects": [{"id": PROJ, "name": "Finance Analytics", "status": 0}],
+        "POST /subscriptions/query": {"subscriptions": [
+            {"id": SUB, "name": "Daily Sales Email", "projectId": PROJ,
+             "owner": {"name": "j.smith"}, "delivery": {"softDisabled": False}}]},
+    })
+    out = ex.execute("list_all_subscriptions", {})
+    query = next(c for c in ex.client.calls if c["path"] == "/subscriptions/query")
+    assert query["method"] == "POST"
+    assert query["json_body"] == {"projectIds": [PROJ]}
+    assert out[0]["project"] == "Finance Analytics"
+    assert out[0]["enabled"] is True
+
+
+def test_cache_usage_requires_cluster_node():
+    ex = _executor({
+        "GET /monitors/iServer/nodes": {"nodes": [{"name": "node-1"}]},
+        "GET /monitors/caches/cubes/aggregatedUsages": {"aggregatedUsages": [
+            {"name": "Finance Analytics", "size": 2097152, "count": 3}]},
+    })
+    out = ex.execute("get_cube_cache_usage", {"group_by": "project"})
+    call = ex.client.calls[-1]
+    assert call["params"]["clusterNode"] == "node-1"
+    assert call["params"]["groupByObject"] == "project"
+    assert out[0]["size_mb"] == 2.0
+
+
+def test_list_jobs_uses_monitor_endpoint():
+    ex = _executor({
+        "GET /monitors/iServer/nodes": {"nodes": [{"name": "node-1"}]},
+        "GET /monitors/jobs": {"jobs": [
+            {"id": 4821, "jobType": "Cube Publish", "status": "executing",
+             "userFullName": "svc", "objectName": "Finance Master Cube",
+             "projectId": PROJ, "projectName": "Finance Analytics"}]},
+    })
+    out = ex.execute("list_jobs", {"project_id": PROJ})
+    assert ex.client.calls[-1]["path"] == "/monitors/jobs"
+    assert ex.client.calls[-1]["params"]["clusterNode"] == "node-1"
+    assert out[0]["job_id"] == 4821
+
+
+def test_dependencies_uses_metadata_search():
+    ex = _executor({
+        "POST /v2/metadataSearches/results": {"id": "srch1", "totalItems": 2},
+        "GET /metadataSearches/results": {"result": [
+            {"name": "Monthly P&L Report", "type": 3, "subtype": 768}]},
+    })
+    out = ex.execute("get_object_dependencies", {
+        "project_id": PROJ, "object_id": CUBE, "direction": "used_by"})
+    post = next(c for c in ex.client.calls if c["path"] == "/v2/metadataSearches/results")
+    # direction used_by -> objects that USE the target -> usesObject param
+    assert "usesObject" in post["params"]
+    assert post["params"]["usesObject"] == f"{CUBE};3"
+    assert out["dependents"][0]["name"] == "Monthly P&L Report"
+
+
+def test_kill_job_deletes():
+    ex = _executor({"DELETE /monitors/jobs/4822": (204, None)})
+    out = ex.execute("kill_job", {"job_id": 4822})
+    assert ex.client.calls[-1]["method"] == "DELETE"
+    assert ex.client.calls[-1]["path"] == "/monitors/jobs/4822"
+    assert out["cancelled"] is True
+
+
+def test_delete_object_sends_type_param():
+    ex = _executor({f"DELETE /objects/{CUBE}": (204, None)})
+    out = ex.execute("delete_object", {
+        "project_id": PROJ, "object_id": CUBE, "object_type": "cube"})
+    call = ex.client.calls[-1]
+    assert call["path"] == f"/objects/{CUBE}"
+    assert call["params"] == {"type": 3}          # cube/report object type
+    assert call["project_id"] == PROJ
+    assert out["deleted"] is True
+
+
+def test_delete_schedule_deletes():
+    ex = _executor({"DELETE /schedules/SCH1": (204, None)})
+    out = ex.execute("delete_schedule", {"schedule_id": "SCH1"})
+    assert ex.client.calls[-1]["path"] == "/schedules/SCH1"
+    assert out["deleted"] is True
