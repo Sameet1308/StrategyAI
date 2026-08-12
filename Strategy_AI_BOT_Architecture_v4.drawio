@@ -1,0 +1,254 @@
+<mxfile host="app.diagrams.net" modified="2026-08-11T12:00:00.000Z" agent="Claude" version="24.7.8" type="device">
+  <diagram id="strategy-ai-bot-final-v4" name="Architecture FINAL v4 (HITL + risks — no object storage)">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2340" pageHeight="1900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===================== TITLE ===================== -->
+        <mxCell id="title" value="Strategy AI BOT Framework — Solution Architecture on AWS (FINAL v4 — approved services only)&#10;Direct Bedrock Converse (no Agent service) · MCP tool layer on EKS worker · user→service-account audit correlation · HITL gate · NO object storage (exports out of scope) · alerting" style="text;html=1;align=left;verticalAlign=top;fontSize=18;fontStyle=1;fontColor=#232F3E;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1800" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Every arrow is numbered — see STEP COMMENTARY (bottom right). Identity chain: Okta user → session_id → correlation_id → SQS attrs → worker → RDS audit table → MSTR jobId join. MSTR sees only the service account; the RDS audit table is the system of record. See companion doc for full design detail." style="text;html=1;align=left;verticalAlign=top;fontSize=11;fontColor=#B85450;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1800" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== LANE A: INGRESS / IDENTITY ===================== -->
+        <mxCell id="laneA" value="INGRESS · IDENTITY" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;dashed=1;verticalAlign=top;fontSize=14;fontStyle=1;align=center;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="330" height="1020" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user" value="Architect / LOB Admin&#10;(corporate network)&#10;chat + image upload + approvals" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.user;" vertex="1" parent="1">
+          <mxGeometry x="160" y="190" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="idp" value="Okta + Azure AD&#10;(external IdP · OIDC)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;" vertex="1" parent="1">
+          <mxGeometry x="160" y="370" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="alb" value="Application Load Balancer&#10;Okta OIDC (built-in authN)&#10;JWT carries user identity (sub, email)&#10;no public ingress — internal only" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;" vertex="1" parent="1">
+          <mxGeometry x="160" y="550" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="secrets" value="AWS Secrets Manager&#10;MSTR service account creds&#10;(service_account_placeholder)&#10;rotated · fetched via IRSA · never in env" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;" vertex="1" parent="1">
+          <mxGeometry x="160" y="820" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== LANE B: EKS WORKLOADS ===================== -->
+        <mxCell id="laneB" value="EKS · 3 WORKLOADS (MCP server + agent loop live here · IRSA per pod)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCF3E3;strokeColor=#D79B00;dashed=1;verticalAlign=top;fontSize=14;fontStyle=1;align=center;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="400" y="140" width="440" height="1020" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eksApi" value="Amazon EKS — FastAPI pod&#10;React UI + API + RBAC&#10;mints session_id + correlation_id&#10;interactive chat · image passthrough&#10;approval UI (HITL)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_kubernetes_service;" vertex="1" parent="1">
+          <mxGeometry x="580" y="200" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sqs" value="Amazon SQS — job queue&#10;msg attrs: user_id · session_id ·&#10;correlation_id&#10;+ DLQ (maxReceive=3 → redrive)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#E7157B;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.simple_queue_service;" vertex="1" parent="1">
+          <mxGeometry x="580" y="430" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eksWorker" value="Amazon EKS — Worker pod&#10;MCP server + agent loop (Converse)&#10;MSTR REST · long polls · ERR009 re-auth&#10;max-iteration cap · concurrency cap&#10;tool allowlist · breaker check pre-call" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_kubernetes_service;" vertex="1" parent="1">
+          <mxGeometry x="580" y="660" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="hitlGate" value="HITL APPROVAL GATE&#10;destructive-tool allowlist&#10;loop pauses → status AWAITING_APPROVAL&#10;resumes only on recorded approval" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="440" y="530" width="120" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eventbridge" value="Amazon EventBridge Scheduler&#10;nightly trigger (Track B)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#E7157B;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;" vertex="1" parent="1">
+          <mxGeometry x="460" y="960" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eksCron" value="Amazon EKS — Batch pod&#10;nightly sync jobs&#10;(triggered by EventBridge)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_kubernetes_service;" vertex="1" parent="1">
+          <mxGeometry x="660" y="960" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== LANE C: AI BEDROCK ===================== -->
+        <mxCell id="laneC" value="AI · BEDROCK (direct Converse — no Agent service)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0EBF7;strokeColor=#9673A6;dashed=1;verticalAlign=top;fontSize=14;fontStyle=1;align=center;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="870" y="140" width="360" height="1020" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bedrockChat" value="Amazon Bedrock — Converse API&#10;Claude Sonnet · Titan Embed&#10;interactive chat (streaming)&#10;images as inline content blocks&#10;(&lt;3.75MB base64 — ephemeral)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#01A88D;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="220" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bedrockTools" value="Amazon Bedrock — Converse API&#10;+ MCP tool definitions&#10;toolUse / toolResult loop&#10;token budget per session" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#01A88D;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="640" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== LANE D: DATA ===================== -->
+        <mxCell id="laneD" value="DATA · RDS (Multi-AZ) — sole persistence layer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F0F8;strokeColor=#6C8EBF;dashed=1;verticalAlign=top;fontSize=14;fontStyle=1;align=center;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="140" width="380" height="1020" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rds" value="Amazon RDS — PostgreSQL (Multi-AZ)&#10;chats · sessions · approvals ·&#10;pgvector (KB) · MV via pg_cron" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="230" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="auditTable" value="AUDIT TABLE (system of record)&#10;correlation_id · user_id · session_id&#10;tool_name · endpoint · timestamps&#10;MSTR jobId / instanceId · image hash&#10;approver identity (HITL) → joins MSTR EM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="480" width="250" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="jobStatus" value="job_status table&#10;live status · progress ·&#10;AWAITING_APPROVAL state&#10;(replaces ElastiCache — same RDS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="650" width="250" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== LANE E: MSTR VENDOR ===================== -->
+        <mxCell id="laneE" value="MSTR · VENDOR AWS (3rd-party SaaS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE9E7;strokeColor=#B85450;dashed=1;verticalAlign=top;fontSize=14;fontStyle=1;align=center;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1670" y="140" width="360" height="1020" as="geometry" />
+        </mxCell>
+
+        <mxCell id="privatelink" value="AWS PrivateLink&#10;egress via central account&#10;+ Firewall / IPS" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.privatelink;" vertex="1" parent="1">
+          <mxGeometry x="1810" y="380" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mstr" value="MicroStrategy (live REST)&#10;vendor-hosted · service account only&#10;base: .../MicroStrategyLibrarySTD&#10;login mode 1 · X-MSTR-AuthToken&#10;rate-limited by worker concurrency cap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=11;align=center;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="600" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mstrEM" value="MSTR Enterprise Manager /&#10;platform logs&#10;show SERVICE ACCOUNT only —&#10;join key: svc acct + timestamp + jobId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=11;align=center;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="840" width="220" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== CROSS-CUTTING BAND ===================== -->
+        <mxCell id="laneX" value="CROSS-CUTTING · OBSERVABILITY · ALERTING · AGENTIC-AI CIRCUIT BREAKER (mandatory — RAE ADR)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#82B366;dashed=1;verticalAlign=top;fontSize=14;fontStyle=1;align=center;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1190" width="1200" height="330" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cloudwatch" value="Amazon CloudWatch&#10;structured JSON logs + alarms&#10;every line: correlation_id · user_id" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#E7157B;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" vertex="1" parent="1">
+          <mxGeometry x="140" y="1260" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sns" value="Amazon SNS&#10;on-call notification&#10;DLQ depth · error-rate ·&#10;breaker-trip alarms" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#E7157B;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.simple_notification_service;" vertex="1" parent="1">
+          <mxGeometry x="380" y="1260" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ssm" value="AWS Systems Manager&#10;Parameter Store — breaker flags&#10;agent → category → subsystem&#10;no redeploy to trip · trips audit-logged" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#E7157B;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.systems_manager;" vertex="1" parent="1">
+          <mxGeometry x="620" y="1260" width="70" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="riskPanel" value="ACCEPTED RISKS &amp; CONTROLS&#10;&#10;R1 Single-region deployment — accepted (internal admin tool). Control: RDS Multi-AZ, IaC redeploy runbook. RTO 4h / RPO 15m (automated backups).&#10;R2 Prompt injection via MSTR object names / user images — Controls: tool allowlist, read-only default, HITL gate on all mutations, no tool can alter its own allowlist.&#10;R3 Runaway agent loop — Controls: max 15 iterations/job, per-session Bedrock token budget, circuit breaker pre-call check.&#10;R4 Vendor MSTR overload — Control: worker concurrency cap (N=4 concurrent MSTR sessions), exponential backoff on 5xx.&#10;R5 Mixed RDS load (OLTP + pgvector + pg_cron MV) — accepted at current scale; Control: Performance Insights watch, read-replica escape hatch documented.&#10;R6 Screenshot may contain client data — Control: images ephemeral (in-memory base64 → Converse), never persisted; only SHA-256 hash in audit table.&#10;R7 Service account is a shared high-privilege identity — Controls: Secrets Manager + rotation, IRSA-scoped access, full per-call attribution via audit table (step 12)." style="text;html=1;align=left;verticalAlign=top;fontSize=10;fontColor=#33691E;fillColor=#FFFFFF;strokeColor=#82B366;rounded=1;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="740" y="1230" width="480" height="270" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== STEP COMMENTARY PANEL ===================== -->
+        <mxCell id="commentary" value="STEP COMMENTARY&#10;&#10;1  User authenticates — ALB Okta OIDC (built-in). JWT carries sub + email.&#10;2  ALB → FastAPI pod; RBAC enforced per user role. Internal ingress only.&#10;3  FastAPI writes session record to RDS: user_id + session_id + chat turns.&#10;4  Interactive chat: FastAPI ↔ Bedrock Converse (streaming). User images pass through as inline base64 content blocks (&lt;3.75MB) — ephemeral, never persisted; SHA-256 hash logged to audit table.&#10;5  Long-running admin action: FastAPI mints correlation_id, enqueues SQS msg with attrs {user_id, session_id, correlation_id}. maxReceive=3 → DLQ.&#10;6  Worker consumes; identity attrs travel with the message — never inferred.&#10;7  Worker agent loop: Bedrock Converse + MCP tool definitions. Max 15 iterations; per-session token budget.&#10;8  Bedrock returns toolUse → worker executes matching MCP tool. Breaker flag checked before every call.&#10;9  Worker fetches service account creds from Secrets Manager (IRSA; cached, TTL).&#10;10 MCP tool fires MSTR REST via PrivateLink. requests.Session(); login mode 1; X-MSTR-AuthToken + cookies; ERR009 re-auth; long polls; concurrency cap N=4.&#10;11 MSTR returns jobId / instanceId — captured verbatim.&#10;12 Worker writes AUDIT row: correlation_id, user_id, session_id, tool_name, endpoint, MSTR jobId, timestamps, approver (if HITL). System of record.&#10;13 Worker updates job_status (live progress).&#10;14 FastAPI polls job_status → UI shows progress.&#10;15 KB retrieval: worker queries RDS pgvector, injects context into prompt.&#10;16 Nightly: EventBridge Scheduler → EKS batch pod (Track B).&#10;17 Circuit breaker: worker reads SSM Parameter Store flag pre-call.&#10;18 All pods emit structured CloudWatch logs keyed by correlation_id.&#10;19 OFFLINE JOIN (dashed): audit table ↔ MSTR EM logs via svc acct + timestamp + jobId — answers &quot;which human ran this call.&quot;&#10;&#10;— HITL FLOW —&#10;20 Tool on destructive allowlist → worker pauses loop, sets job_status = AWAITING_APPROVAL with proposed action payload.&#10;21 FastAPI surfaces approval card in UI; user approves/rejects. Decision + approver identity written to RDS approvals table.&#10;22 Worker resumes only on recorded approval; executes; audit row includes approver. Reject → loop ends gracefully, user informed.&#10;&#10;— SCOPE NOTE —&#10;Export/download endpoints (dossier PDF/XLSX, .mmp packages) are OUT OF SCOPE for the bot — users export via native MSTR Library/Workstation. No object storage exists in this architecture; RDS is the sole persistence layer. User images are ephemeral (inline base64 → Converse, never stored; SHA-256 hash in audit only).&#10;&#10;— ALERTING —&#10;23 CloudWatch alarms (DLQ depth &gt; 0, error rate, breaker trip) → SNS → on-call." style="text;html=1;align=left;verticalAlign=top;fontSize=10;fontColor=#232F3E;fillColor=#FFFFFF;strokeColor=#999999;rounded=1;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="1190" width="770" height="640" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== EDGES ===================== -->
+        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#232F3E;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="user" target="idp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1b" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#232F3E;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="idp" target="alb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#232F3E;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="alb" target="eksApi">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="330" y="585" />
+              <mxPoint x="330" y="235" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6C8EBF;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.25;entryX=0;entryY=0.25;" edge="1" parent="1" source="eksApi" target="rds">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="4 · chat + images" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#01A88D;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;startArrow=classic;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" edge="1" parent="1" source="eksApi" target="bedrockChat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E7157B;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="eksApi" target="sqs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E7157B;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="sqs" target="eksWorker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="7 / 8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#01A88D;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;startArrow=classic;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="eksWorker" target="bedrockTools">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#DD344C;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0;exitY=0.75;entryX=1;entryY=0.5;" edge="1" parent="1" source="eksWorker" target="secrets">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#8C4FFF;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" edge="1" parent="1" source="eksWorker" target="privatelink">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="790" y="415" />
+              <mxPoint x="1660" y="415" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10b" value="10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#8C4FFF;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="privatelink" target="mstr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B85450;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.75;" edge="1" parent="1" source="mstr" target="eksWorker">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1660" y="720" />
+              <mxPoint x="800" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" value="12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#D79B00;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" edge="1" parent="1" source="eksWorker" target="auditTable">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1290" y="535" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13" value="13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6C8EBF;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="eksWorker" target="jobStatus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6C8EBF;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0;exitY=0.75;entryX=1;entryY=0.9;" edge="1" parent="1" source="jobStatus" target="eksApi">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1250" y="1170" />
+              <mxPoint x="720" y="1170" />
+              <mxPoint x="720" y="263" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e15" value="15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#C925D1;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;startArrow=classic;exitX=1;exitY=0.1;entryX=0;entryY=0.75;" edge="1" parent="1" source="eksWorker" target="rds">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="850" y="330" />
+              <mxPoint x="1330" y="330" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e16" value="16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E7157B;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="eventbridge" target="eksCron">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" value="17" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82B366;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="eksWorker" target="ssm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" value="18" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82B366;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="eksApi" target="cloudwatch">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="175" y="1170" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e19" value="19 · offline audit join" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B85450;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;dashed=1;startArrow=classic;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="auditTable" target="mstrEM">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1655" y="885" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e20" value="20" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#D6B656;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.25;entryX=1;entryY=0.75;" edge="1" parent="1" source="eksWorker" target="hitlGate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" value="21 · approve / reject" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#D6B656;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;startArrow=classic;exitX=0.5;exitY=0;entryX=0;entryY=1;" edge="1" parent="1" source="hitlGate" target="eksApi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e22" value="22 · resume on approval" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#D6B656;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="hitlGate" target="eksWorker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e25" value="23 · alarms" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E7157B;fontSize=12;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cloudwatch" target="sns">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
